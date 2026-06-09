@@ -78,7 +78,8 @@ dependencies. Replay uses rrweb defaults (passwords masked; other inputs visible
 
 - Console/network history before **Start** is not captured — recording is forward-only.
 - Response bodies are captured only for text-like types under 100 KB (configurable via `BODY_CAPTURE_MAX_BYTES` in `background.js`).
-- Replay events are held in memory uncompressed — keep captures short (minutes, not hours). If a report exceeds the [~10 MB storage quota](https://developer.chrome.com/docs/extensions/reference/api/storage), the replay is dropped and noted on the timeline.
+- Replay events are held in memory uncompressed — keep captures short (minutes, not hours). If a report exceeds the [~10 MB storage quota](https://developer.chrome.com/docs/extensions/reference/api/storage), it degrades in layers: replay dropped (noted on the timeline), then screenshot pixels.
+- Only the most recent report is kept in extension storage (quota); download the HTML to keep a capture.
 - Canvas/WebGL, video frames, and cross-origin iframes replay imperfectly (DOM replay, not pixels — see `plans/PHASE_3_PLAN.md`).
 - Images may not render in offline replay (rrweb `inlineImages` default off); structure and text replay faithfully.
 - Chromium-only (Chrome, Vivaldi, Edge, Brave). Firefox/Safari need the injection pivot in `plans/PHASE_4_PLAN.md`.

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "OpenJam",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Capture console logs, network requests, screenshots and device info on one timeline, then export a self-contained bug report. Open-source Jam.dev.",
   "permissions": ["debugger", "tabs", "storage", "activeTab", "scripting"],
   "host_permissions": ["<all_urls>"],

@@ -4,7 +4,8 @@
   "private": true,
   "description": "Open-source jam.dev alternative: Chrome MV3 extension capturing console/network/errors/screenshots/device + rrweb session replay on one timeline, exported as a self-contained HTML bug report.",
   "scripts": {
-    "build": "node build.mjs"
+    "build": "node build.mjs",
+    "test": "bun test"
   },
   "repository": {
     "type": "git",

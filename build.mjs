@@ -16,6 +16,13 @@ await build({
 
 const umd = readFileSync("node_modules/rrweb-player/dist/rrweb-player.umd.min.cjs", "utf8");
 const css = readFileSync("node_modules/rrweb-player/dist/style.min.css", "utf8");
+// The UMD gets inlined into an HTML <script>. The export neutralises </script>,
+// but <!-- or <script would shift the HTML parser into a state that swallows
+// the closing tag (https://html.spec.whatwg.org/multipage/scripting.html#restrictions-for-contents-of-script-elements).
+// Today's build contains none of these — fail loudly if a future version does.
+if (/<\/script|<script|<!--/i.test(umd)) {
+  throw new Error("rrweb-player UMD contains HTML-breaking sequences (<script, </script or <!--); review export inlining before shipping");
+}
 mkdirSync("src/generated", { recursive: true });
 writeFileSync(
   "src/generated/player-assets.js",
