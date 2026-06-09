@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>OpenJam Report</title>
+<style>
+  html,body{height:100%;margin:0}
+  body{display:flex;flex-direction:column;background:#0f1115;color:#e6e9ef;font:13px -apple-system,BlinkMacSystemFont,sans-serif}
+  #bar{display:flex;align-items:center;gap:12px;padding:8px 14px;border-bottom:1px solid #2a2f3a;background:#171a21;position:sticky;top:0;z-index:10}
+  #bar strong{font-size:13px}
+  #bar .spacer{flex:1}
+  #bar button{background:#6ea8fe;color:#0b0d12;border:0;border-radius:6px;padding:7px 14px;font-weight:600;cursor:pointer}
+  #app{flex:1;overflow:auto}
+</style>
+</head>
+<body>
+  <div id="bar">
+    <strong>OpenJam</strong>
+    <span class="spacer"></span>
+    <button id="download">⬇ Download self-contained HTML</button>
+  </div>
+  <div id="app"></div>
+  <script type="module" src="viewer.js"></script>
+</body>
+</html>

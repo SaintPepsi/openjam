@@ -1,0 +1,43 @@
+// In-extension report page. Renders the timeline directly into the page DOM
+// (no inline script, no iframe) to satisfy the Manifest V3 page CSP
+// (script-src 'self'), and exports the self-contained file on demand.
+
+import { renderReport, REPORT_CSS } from "./renderer.js";
+import { buildReportHTML } from "./report-builder.js";
+
+const params = new URLSearchParams(location.search);
+const key = params.get("key");
+
+function fail(message) {
+  const app = document.getElementById("app");
+  app.textContent = message;
+  app.style.padding = "30px";
+  app.style.color = "#f85149";
+}
+
+async function load() {
+  const style = document.createElement("style");
+  style.textContent = REPORT_CSS;
+  document.head.appendChild(style);
+
+  if (!key) return fail("No report key provided.");
+  const stored = await chrome.storage.local.get(key);
+  const report = stored[key];
+  if (!report) return fail("Report not found (it may have been cleared).");
+
+  renderReport(document.getElementById("app"), report);
+
+  document.getElementById("download").addEventListener("click", () => {
+    const html = buildReportHTML(report);
+    const blob = new Blob([html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const stamp = new Date(report.meta.capturedAt).toISOString().replace(/[:.]/g, "-");
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "openjam-" + stamp + ".html";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+}
+
+load();

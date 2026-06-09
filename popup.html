@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  :root{--bg:#0f1115;--fg:#e6e9ef;--muted:#8b93a3;--accent:#6ea8fe;--red:#f85149;--green:#3fb950;--line:#2a2f3a}
+  body{width:260px;margin:0;font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--fg);padding:14px}
+  h1{font-size:14px;margin:0 0 2px}
+  .sub{color:var(--muted);font-size:11px;margin-bottom:12px}
+  button{width:100%;border:0;border-radius:8px;padding:10px;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:8px}
+  .primary{background:var(--accent);color:#0b0d12}
+  .stop{background:var(--red);color:#fff}
+  .ghost{background:transparent;border:1px solid var(--line);color:var(--fg)}
+  .ghost:disabled{opacity:.4;cursor:not-allowed}
+  .status{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:12px}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--muted)}
+  .dot.live{background:var(--red);box-shadow:0 0 0 3px rgba(248,81,73,.25)}
+  .count{color:var(--muted);margin-left:auto;font-variant-numeric:tabular-nums}
+  .hint{color:var(--muted);font-size:11px;margin-top:6px}
+</style>
+</head>
+<body>
+  <h1>OpenJam</h1>
+  <div class="sub">Capture a bug on a timeline</div>
+  <div class="status"><span id="dot" class="dot"></span><span id="state">Idle</span><span id="count" class="count"></span></div>
+  <button id="toggle" class="primary">Start recording</button>
+  <button id="shot" class="ghost" disabled>📸 Capture screenshot</button>
+  <div class="hint" id="hint">Records console, network, errors &amp; screenshots on the active tab.</div>
+  <script src="popup.js"></script>
+</body>
+</html>
