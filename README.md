@@ -1,11 +1,22 @@
 # OpenJam
 
 An open-source take on [Jam.dev](https://jam.dev): a Chrome extension that captures
-**console logs, network requests, JS errors, screenshots, and device/environment info**
-onto a single correlated timeline, then exports a **self-contained HTML bug report** you
-can open offline and share as a file.
+**console logs, network requests, JS errors, screenshots, device/environment info, and a
+full DOM session replay** ([rrweb](https://github.com/rrweb-io/rrweb)) onto a single
+correlated timeline, then exports a **self-contained HTML bug report** — open it offline
+and watch the session play back.
 
 No backend, no account, no telemetry. Everything stays on your machine.
+
+## Build (required once)
+
+rrweb must be bundled into the extension — MV3 forbids loading remote code
+([Chrome docs](https://developer.chrome.com/docs/extensions/develop/migrate/improve-security)):
+
+```sh
+npm install
+npm run build   # bundles dist/rrweb-recorder.js + generates src/generated/player-assets.js
+```
 
 ## How it works
 
@@ -55,16 +66,26 @@ filterable timeline.
 | `popup.html` / `popup.js` | Start/stop/screenshot controls |
 | `viewer.html` | Renders the report and handles file export |
 
-## Known limitations (v0.1.0)
+## Session replay
+
+While recording, an rrweb recorder (content script, `src/rrweb-recorder.js`) captures the
+DOM and its mutations. The exported HTML embeds
+[rrweb-player](https://github.com/rrweb-io/rrweb/tree/master/packages/rrweb-player) plus
+the event stream, so the shared file plays the session back — scrubbable, offline, no
+dependencies. Replay uses rrweb defaults (passwords masked; other inputs visible).
+
+## Known limitations (v0.2.0 — MVP, see plans/MVP_PLAN.md for the cut list)
 
 - Console/network history before **Start** is not captured — recording is forward-only.
 - Response bodies are captured only for text-like types under 100 KB (configurable via `BODY_CAPTURE_MAX_BYTES` in `background.js`).
-- If Chrome suspends the background service worker during a long idle recording, the session ends; keep captures focused.
-- No video recording yet (frame screenshots only). The CDP `Page.startScreencast` path is the natural next step.
+- Replay events are held in memory uncompressed — keep captures short (minutes, not hours). If a report exceeds the [~10 MB storage quota](https://developer.chrome.com/docs/extensions/reference/api/storage), the replay is dropped and noted on the timeline.
+- Canvas/WebGL, video frames, and cross-origin iframes replay imperfectly (DOM replay, not pixels — see `plans/PHASE_3_PLAN.md`).
+- Images may not render in offline replay (rrweb `inlineImages` default off); structure and text replay faithfully.
+- Chromium-only (Chrome, Vivaldi, Edge, Brave). Firefox/Safari need the injection pivot in `plans/PHASE_4_PLAN.md`.
 
-## Roadmap ideas
+## Roadmap (researched & verified plans in plans/)
 
-- Screencast/video replay synced to the timeline.
-- Annotated screenshots (boxes, arrows, redaction).
-- One-click copy to GitHub / Linear / Slack issue templates.
-- Cross-browser build via `webextension-polyfill` (Firefox MV3).
+- `PHASE_1_PLAN.md` — bounded ring buffer + IndexedDB for long sessions, in-extension player
+- `PHASE_2_PLAN.md` — compressed exports (fflate) for large captures
+- `PHASE_3_PLAN.md` — hybrid CDP pixel keyframes for canvas/WebGL/cross-origin
+- `PHASE_4_PLAN.md` — Firefox/Safari via injection-based capture

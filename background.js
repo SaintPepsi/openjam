@@ -13,6 +13,7 @@ const session = {
   monoOffset: null, // wallMs - (monotonic seconds * 1000), set on first network event
   seq: 0,
   events: [], // unified timeline
+  rrwebEvents: [], // rrweb session-replay events (timestamps are Date.now() epoch ms)
   requestEvents: new Map(), // requestId -> network event reference
   device: null,
   lastErrorShot: 0,
@@ -265,6 +266,43 @@ function maybeErrorScreenshot() {
   captureScreenshot("Auto-captured on error");
 }
 
+// ---- rrweb replay recorder ------------------------------------------------
+
+async function startReplayRecorder(tabId) {
+  try {
+    await chrome.tabs.sendMessage(tabId, { action: "oj-rrweb-start" });
+  } catch {
+    // Content script absent (e.g. extension was reloaded after the page
+    // loaded, or a restricted page). Inject and retry once.
+    try {
+      await chrome.scripting.executeScript({ target: { tabId }, files: ["dist/rrweb-recorder.js"] });
+      await chrome.tabs.sendMessage(tabId, { action: "oj-rrweb-start" });
+    } catch (err) {
+      pushEvent({
+        t: Date.now(),
+        kind: "log",
+        level: "warning",
+        title: "Session replay unavailable on this page",
+        detail: { message: String(err) },
+      });
+    }
+  }
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type === "oj-rrweb-batch") {
+    if (session.recording && sender.tab && sender.tab.id === session.tabId) {
+      session.rrwebEvents.push(...msg.events);
+    }
+    return;
+  }
+  if (msg.type === "oj-rrweb-hello") {
+    // A page (re)loaded; tell its recorder to resume if we're mid-recording.
+    sendResponse({ record: session.recording && sender.tab && sender.tab.id === session.tabId });
+    return;
+  }
+});
+
 // ---- lifecycle ------------------------------------------------------------
 
 async function startRecording(tabId) {
@@ -276,6 +314,7 @@ async function startRecording(tabId) {
     monoOffset: null,
     seq: 0,
     events: [],
+    rrwebEvents: [],
     requestEvents: new Map(),
     device: null,
     lastErrorShot: 0,
@@ -295,6 +334,7 @@ async function startRecording(tabId) {
 
   await captureDeviceInfo();
   await captureScreenshot("Recording started");
+  await startReplayRecorder(tabId);
   return { ok: true };
 }
 
@@ -302,10 +342,17 @@ async function stopRecording() {
   if (!session.recording) return { ok: false, error: "Not recording." };
   await captureScreenshot("Recording stopped");
   const tabId = session.tabId;
-  session.recording = false;
 
-  // Give in-flight body fetches a brief moment to land before detaching.
-  await new Promise((resolve) => setTimeout(resolve, 250));
+  try {
+    await chrome.tabs.sendMessage(tabId, { action: "oj-rrweb-stop" });
+  } catch {
+    // recorder absent on this page — already logged at start
+  }
+
+  // Give in-flight body fetches and the recorder's final batch a moment to land.
+  // recording stays true until after the wait so the final rrweb batch is accepted.
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  session.recording = false;
 
   try {
     await chrome.debugger.detach({ tabId });
@@ -324,10 +371,28 @@ async function stopRecording() {
     },
     device: session.device,
     events: session.events.slice().sort((a, b) => a.t - b.t),
+    rrwebEvents: session.rrwebEvents.slice().sort((a, b) => a.timestamp - b.timestamp),
   };
 
   const key = "report-" + session.startWall;
-  await chrome.storage.local.set({ [key]: report, lastReportKey: key });
+  try {
+    await chrome.storage.local.set({ [key]: report, lastReportKey: key });
+  } catch (err) {
+    // Likely the ~10 MB chrome.storage.local quota on a replay-heavy capture
+    // (https://developer.chrome.com/docs/extensions/reference/api/storage).
+    // Keep the bug report alive: drop the replay, note it on the timeline.
+    report.rrwebEvents = [];
+    report.events.push({
+      id: session.seq + 1,
+      t: Date.now(),
+      rel: Date.now() - session.startWall,
+      kind: "log",
+      level: "warning",
+      title: "Session replay omitted: report exceeded storage quota",
+      detail: { message: String(err) },
+    });
+    await chrome.storage.local.set({ [key]: report, lastReportKey: key });
+  }
   await chrome.tabs.create({ url: chrome.runtime.getURL("viewer.html?key=" + encodeURIComponent(key)) });
   return { ok: true, eventCount: report.events.length };
 }

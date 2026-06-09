@@ -3,8 +3,15 @@
   "name": "OpenJam",
   "version": "0.1.0",
   "description": "Capture console logs, network requests, screenshots and device info on one timeline, then export a self-contained bug report. Open-source Jam.dev.",
-  "permissions": ["debugger", "tabs", "storage", "activeTab"],
+  "permissions": ["debugger", "tabs", "storage", "activeTab", "scripting"],
   "host_permissions": ["<all_urls>"],
   "background": { "service_worker": "background.js", "type": "module" },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["dist/rrweb-recorder.js"],
+      "run_at": "document_start"
+    }
+  ],
   "action": { "default_popup": "popup.html", "default_title": "OpenJam" }
 }
