@@ -8,7 +8,8 @@ full DOM session replay** ([rrweb](https://github.com/rrweb-io/rrweb)) onto a si
 correlated timeline, then exports a **self-contained HTML bug report** — open it offline
 and watch the session play back.
 
-No backend, no account, no telemetry. Everything stays on your machine.
+No backend, no account, no telemetry. Everything stays on your machine
+([privacy policy](PRIVACY.md)).
 
 ![Report viewer: session replay + timeline](docs/screenshots/viewer.png)
 

@@ -1,0 +1,55 @@
+# OpenJam Privacy Policy
+
+_Last updated: 2026-06-10_
+
+OpenJam records browser sessions **entirely on your machine**. There is no
+backend, no account, no analytics, and no telemetry.
+
+## What OpenJam captures
+
+While you are actively recording (and only then), OpenJam captures from the
+recorded tab: console messages, JavaScript errors, network request metadata
+and text response bodies, screenshots, device/environment info (user agent,
+viewport, timezone), and a DOM session replay ([rrweb](https://github.com/rrweb-io/rrweb)).
+Password fields are masked in the replay by default.
+
+## Where it goes
+
+Captured data is held in memory during recording and saved to your browser's
+local extension storage (`chrome.storage.local`) when you stop. Only the most
+recent report is kept. Exported reports are self-contained HTML files written
+to wherever you choose to save them.
+
+**Nothing is ever transmitted off your device by OpenJam.** The only way data
+leaves your machine is you sharing an exported file yourself.
+
+## Permissions
+
+| Permission | Why |
+|---|---|
+| `debugger` | Attach the Chrome DevTools Protocol to the recorded tab — the source of console/network/error/screenshot events |
+| `<all_urls>` host access | Record whichever page the bug is on |
+| `tabs`, `activeTab` | Identify the tab being recorded |
+| `scripting` | Run the session-replay recorder in the recorded page |
+| `storage`, `unlimitedStorage` | Save the report locally without a size cap |
+
+## Error reporting
+
+If OpenJam itself fails, it offers a link to open a **pre-filled public GitHub
+issue** containing only the error text, extension version, and browser user
+agent — never page URLs or captured data. Nothing is sent unless you review
+and submit the issue yourself.
+
+## Verify it yourself
+
+OpenJam is open source ([GPL-3.0](LICENSE)). Every claim above is checkable in
+the code: capture and local-save logic in
+[`background.js`](https://github.com/SaintPepsi/openjam/blob/main/background.js)
+(single-report retention in `saveReport`), the issue-link contents in
+[`issue-link.js`](https://github.com/SaintPepsi/openjam/blob/main/issue-link.js),
+and the replay password-masking assertion in
+[`e2e/extension.spec.mjs`](https://github.com/SaintPepsi/openjam/blob/main/e2e/extension.spec.mjs).
+
+## Contact
+
+Questions or concerns: [open an issue](https://github.com/SaintPepsi/openjam/issues).
