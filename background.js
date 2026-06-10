@@ -8,11 +8,13 @@ const SCREENSHOT_ON_ERROR_COOLDOWN_MS = 2000;
 
 const session = {
   recording: false,
+  stopping: false, // guards re-entrant stopRecording during the grace window
   tabId: null,
   startWall: null, // epoch ms when recording began
   monoOffset: null, // wallMs - (monotonic seconds * 1000), set on first network event
   seq: 0,
   events: [], // unified timeline
+  rrwebEvents: [], // rrweb session-replay events (timestamps are Date.now() epoch ms)
   requestEvents: new Map(), // requestId -> network event reference
   device: null,
   lastErrorShot: 0,
@@ -265,17 +267,58 @@ function maybeErrorScreenshot() {
   captureScreenshot("Auto-captured on error");
 }
 
+// ---- rrweb replay recorder ------------------------------------------------
+
+async function startReplayRecorder(tabId) {
+  try {
+    await chrome.tabs.sendMessage(tabId, { action: "oj-rrweb-start" });
+  } catch {
+    // Content script absent (e.g. extension was reloaded after the page
+    // loaded, or a restricted page). Inject and retry once.
+    try {
+      await chrome.scripting.executeScript({ target: { tabId }, files: ["dist/rrweb-recorder.js"] });
+      await chrome.tabs.sendMessage(tabId, { action: "oj-rrweb-start" });
+    } catch (err) {
+      pushEvent({
+        t: Date.now(),
+        kind: "log",
+        level: "warning",
+        title: "Session replay unavailable on this page",
+        detail: { message: String(err) },
+      });
+    }
+  }
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type === "oj-rrweb-batch") {
+    const accept = session.recording && sender.tab && sender.tab.id === session.tabId;
+    if (accept) session.rrwebEvents.push(...msg.events);
+    // {stop:true} tells an orphaned recorder (session ended without it being
+    // told, e.g. debug banner dismissed) to stop serializing the page.
+    sendResponse(accept ? { ok: true } : { stop: true });
+    return;
+  }
+  if (msg.type === "oj-rrweb-hello") {
+    // A page (re)loaded; tell its recorder to resume if we're mid-recording.
+    sendResponse({ record: session.recording && sender.tab && sender.tab.id === session.tabId });
+    return;
+  }
+});
+
 // ---- lifecycle ------------------------------------------------------------
 
 async function startRecording(tabId) {
   if (session.recording) return { ok: false, error: "Already recording." };
   Object.assign(session, {
     recording: true,
+    stopping: false,
     tabId,
     startWall: Date.now(),
     monoOffset: null,
     seq: 0,
     events: [],
+    rrwebEvents: [],
     requestEvents: new Map(),
     device: null,
     lastErrorShot: 0,
@@ -295,17 +338,26 @@ async function startRecording(tabId) {
 
   await captureDeviceInfo();
   await captureScreenshot("Recording started");
+  await startReplayRecorder(tabId);
   return { ok: true };
 }
 
 async function stopRecording() {
-  if (!session.recording) return { ok: false, error: "Not recording." };
+  if (!session.recording || session.stopping) return { ok: false, error: "Not recording." };
+  session.stopping = true;
   await captureScreenshot("Recording stopped");
   const tabId = session.tabId;
-  session.recording = false;
 
-  // Give in-flight body fetches a brief moment to land before detaching.
-  await new Promise((resolve) => setTimeout(resolve, 250));
+  try {
+    await chrome.tabs.sendMessage(tabId, { action: "oj-rrweb-stop" });
+  } catch {
+    // recorder absent on this page — already logged at start
+  }
+
+  // Give in-flight body fetches and the recorder's final batch a moment to land.
+  // recording stays true until after the wait so the final rrweb batch is accepted.
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  session.recording = false;
 
   try {
     await chrome.debugger.detach({ tabId });
@@ -324,18 +376,63 @@ async function stopRecording() {
     },
     device: session.device,
     events: session.events.slice().sort((a, b) => a.t - b.t),
+    rrwebEvents: session.rrwebEvents.slice().sort((a, b) => a.timestamp - b.timestamp),
   };
 
   const key = "report-" + session.startWall;
-  await chrome.storage.local.set({ [key]: report, lastReportKey: key });
+  try {
+    await saveReport(key, report);
+  } finally {
+    session.stopping = false;
+  }
   await chrome.tabs.create({ url: chrome.runtime.getURL("viewer.html?key=" + encodeURIComponent(key)) });
   return { ok: true, eventCount: report.events.length };
 }
 
-// If the debugged tab closes or the user detaches via the banner, stop cleanly.
+// Reports carry base64 screenshots and replay events, and chrome.storage.local
+// is capped at ~10 MB (https://developer.chrome.com/docs/extensions/reference/api/storage).
+// Keep only the newest report, and degrade in layers rather than failing the
+// capture: full report → drop replay → drop screenshot pixels.
+async function saveReport(key, report) {
+  try {
+    const existing = await chrome.storage.local.get(null);
+    const stale = Object.keys(existing).filter((k) => k.startsWith("report-") && k !== key);
+    if (stale.length) await chrome.storage.local.remove(stale);
+  } catch {
+    // best effort — fall through to the save attempts
+  }
+  try {
+    await chrome.storage.local.set({ [key]: report, lastReportKey: key });
+    return;
+  } catch (err) {
+    report.rrwebEvents = [];
+    report.events.push({
+      id: nextId(),
+      t: Date.now(),
+      rel: Date.now() - session.startWall,
+      kind: "log",
+      level: "warning",
+      title: "Session replay omitted: report exceeded storage quota",
+      detail: { message: String(err) },
+    });
+    report.meta.eventCount = report.events.length;
+  }
+  try {
+    await chrome.storage.local.set({ [key]: report, lastReportKey: key });
+  } catch {
+    report.events = report.events.map((e) =>
+      e.kind === "screenshot" ? { ...e, detail: { note: "screenshot dropped (storage quota)" } } : e,
+    );
+    await chrome.storage.local.set({ [key]: report, lastReportKey: key });
+  }
+}
+
+// If the debugged tab closes or the user detaches via the banner, stop cleanly —
+// including the rrweb recorder, which otherwise keeps serializing the page.
 chrome.debugger.onDetach.addListener((source) => {
   if (session.recording && source.tabId === session.tabId) {
     session.recording = false;
+    chrome.tabs.sendMessage(source.tabId, { action: "oj-rrweb-stop" }).catch(() => {});
   }
 });
 
@@ -348,8 +445,10 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 chrome.debugger.onEvent.addListener(onDebuggerEvent);
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type) return; // content-script messages are handled by the listener above
   (async () => {
-    switch (msg.action) {
+    try {
+      switch (msg.action) {
       case "getStatus":
         sendResponse({
           recording: session.recording,
@@ -371,6 +470,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         break;
       default:
         sendResponse({ ok: false, error: "Unknown action" });
+      }
+    } catch (err) {
+      // Never leave the popup awaiting a response that won't come.
+      sendResponse({ ok: false, error: String(err) });
     }
   })();
   return true; // async response

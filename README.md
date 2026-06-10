@@ -1,11 +1,22 @@
 # OpenJam
 
 An open-source take on [Jam.dev](https://jam.dev): a Chrome extension that captures
-**console logs, network requests, JS errors, screenshots, and device/environment info**
-onto a single correlated timeline, then exports a **self-contained HTML bug report** you
-can open offline and share as a file.
+**console logs, network requests, JS errors, screenshots, device/environment info, and a
+full DOM session replay** ([rrweb](https://github.com/rrweb-io/rrweb)) onto a single
+correlated timeline, then exports a **self-contained HTML bug report** — open it offline
+and watch the session play back.
 
 No backend, no account, no telemetry. Everything stays on your machine.
+
+## Build (required once)
+
+rrweb must be bundled into the extension — MV3 forbids loading remote code
+([Chrome docs](https://developer.chrome.com/docs/extensions/develop/migrate/improve-security)):
+
+```sh
+npm install
+npm run build   # bundles dist/rrweb-recorder.js + generates src/generated/player-assets.js
+```
 
 ## How it works
 
@@ -36,8 +47,8 @@ filterable timeline.
 1. Go to the page with the bug.
 2. Click the OpenJam icon → **Start recording**. Chrome shows a "being debugged" banner — that's the CDP attachment; leave it.
 3. Reproduce the bug. Hit **📸 Capture screenshot** at key moments if you want extra frames.
-4. Click **Stop & open report**. A timeline opens in a new tab.
-5. Click **⬇ Download self-contained HTML** to save a shareable file.
+4. Click **Stop & open report**. A new tab opens with the session replay on top and the timeline below.
+5. Click **⬇ Download self-contained HTML** to save a shareable file (replay included).
 
 ## Report viewer
 
@@ -45,26 +56,83 @@ filterable timeline.
 - Full-text search across titles and payloads.
 - Click any row to expand: headers, request/response bodies (pretty-printed JSON), stack traces, full screenshots.
 
+## Development
+
+Dev → build → test loop:
+
+```sh
+git clone https://github.com/SaintPepsi/openjam.git && cd openjam
+npm install        # pinned deps: rrweb@2.0.1, @rrweb/replay@2.0.1, esbuild
+npm run build      # see "When to rebuild" below
+npm test           # bun test — 17 tests (memory behaviors, export safety)
+```
+
+Then load the extension: `chrome://extensions` → Developer mode → **Load unpacked** →
+this folder. After each code change: rebuild (if needed), click the **↻ reload** icon on
+the OpenJam card, and reload the target page (so the content script re-injects).
+
+**When to rebuild (`npm run build`):**
+
+| You changed | Rebuild? | Why |
+|---|---|---|
+| `src/rrweb-recorder.js` | **Yes** | esbuild bundles it (+rrweb) into `dist/rrweb-recorder.js` |
+| rrweb / @rrweb/replay versions | **Yes** | regenerates the bundle and `src/generated/player-assets.js` |
+| `background.js`, `popup.*`, `viewer.*`, `renderer.js`, `report-builder.js` | No | loaded directly by the extension — just reload it |
+| `manifest.json` | No | reload the extension |
+
+`dist/` and `src/generated/` are build outputs (gitignored) — a fresh clone won't load
+until you run `npm run build` once.
+
+**Testing:** `npm test` runs the [Bun](https://bun.sh) suite in `test/` — recorder buffer
+drainage, orphaned-recorder stop, session isolation, storage-quota degradation, export
+size/escaping bounds. For end-to-end verification, `test/e2e/` has a deterministic
+fixture page and `build-export.mjs`, which turns a JSON file of real recorded rrweb
+events into an export — drive them with any browser automation (record on the fixture,
+build the export, assert the replay iframe renders the fixture content and reaches the
+final counter state). The full extension flow (load unpacked → record → stop → viewer →
+download) is also automatable via Playwright with `--load-extension`.
+
 ## Files
 
 | File | Role |
 |---|---|
 | `manifest.json` | MV3 manifest |
-| `background.js` | Capture engine — CDP attach, event routing, report assembly |
-| `report-builder.js` | Generates the self-contained HTML timeline |
+| `background.js` | Capture engine — CDP attach, event routing, rrweb orchestration, report assembly |
+| `src/rrweb-recorder.js` | Content-script session recorder (bundled to `dist/rrweb-recorder.js`) |
+| `build.mjs` | esbuild: bundles the recorder, generates `src/generated/player-assets.js` |
+| `report-builder.js` | Generates the self-contained HTML export (timeline + replay player) |
+| `renderer.js` | Shared timeline renderer (extension page + embedded in exports) |
 | `popup.html` / `popup.js` | Start/stop/screenshot controls |
-| `viewer.html` | Renders the report and handles file export |
+| `viewer.html` / `viewer.js` | Renders the report and handles file export |
+| `test/` | Bun test suite |
+| `plans/` | Verified phase plans + MVP plan; `REPLAY_DESIGN.md` is the architecture |
 
-## Known limitations (v0.1.0)
+## Session replay
+
+While recording, an rrweb recorder (content script, `src/rrweb-recorder.js`) captures the
+DOM and its mutations. The replay plays in the in-extension report page AND in the
+exported HTML — scrubbable, offline, no dependencies. Replay uses rrweb defaults
+(passwords masked; other inputs visible).
+
+Playback is [@rrweb/replay](https://www.npmjs.com/package/@rrweb/replay)'s `Replayer`
+driven by OpenJam's own controller (`mountReplay` in `renderer.js`). We don't use
+`rrweb-player`: its 2.x dist builds ship without the code that constructs the Replayer
+(verified across the 2.0.0/2.0.1 UMD and ESM artifacts — the player shell mounts but no
+replay iframe is ever created), and `build.mjs` bundles the engine directly instead.
+
+## Known limitations (v0.2.0 — MVP, see plans/MVP_PLAN.md for the cut list)
 
 - Console/network history before **Start** is not captured — recording is forward-only.
 - Response bodies are captured only for text-like types under 100 KB (configurable via `BODY_CAPTURE_MAX_BYTES` in `background.js`).
-- If Chrome suspends the background service worker during a long idle recording, the session ends; keep captures focused.
-- No video recording yet (frame screenshots only). The CDP `Page.startScreencast` path is the natural next step.
+- Replay events are held in memory uncompressed — keep captures short (minutes, not hours). If a report exceeds the [~10 MB storage quota](https://developer.chrome.com/docs/extensions/reference/api/storage), it degrades in layers: replay dropped (noted on the timeline), then screenshot pixels.
+- Only the most recent report is kept in extension storage (quota); download the HTML to keep a capture.
+- Canvas/WebGL, video frames, and cross-origin iframes replay imperfectly (DOM replay, not pixels — see `plans/PHASE_3_PLAN.md`).
+- Images may not render in offline replay (rrweb `inlineImages` default off); structure and text replay faithfully.
+- Chromium-only (Chrome, Vivaldi, Edge, Brave), **Chrome ≥118 required**: from 118 an active `chrome.debugger` session keeps the background service worker alive for the whole recording ([SW lifecycle docs](https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle)); on older versions a long idle recording can be evicted. Firefox/Safari need the injection pivot in `plans/PHASE_4_PLAN.md`.
 
-## Roadmap ideas
+## Roadmap (researched & verified plans in plans/)
 
-- Screencast/video replay synced to the timeline.
-- Annotated screenshots (boxes, arrows, redaction).
-- One-click copy to GitHub / Linear / Slack issue templates.
-- Cross-browser build via `webextension-polyfill` (Firefox MV3).
+- `PHASE_1_PLAN.md` — bounded ring buffer + IndexedDB for long sessions, in-extension player
+- `PHASE_2_PLAN.md` — compressed exports (fflate) for large captures
+- `PHASE_3_PLAN.md` — hybrid CDP pixel keyframes for canvas/WebGL/cross-origin
+- `PHASE_4_PLAN.md` — Firefox/Safari via injection-based capture

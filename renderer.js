@@ -47,6 +47,129 @@ details.device summary{padding:10px 22px;cursor:pointer;color:var(--muted);user-
 .empty{padding:40px 22px;text-align:center;color:var(--muted)}
 `;
 
+export const REPLAY_CSS = `
+#replay-section{border-bottom:1px solid #2a2f3a;background:#171a21;padding:14px 22px}
+#replay-section h2{margin:0 0 10px;font-size:13px;color:#8b93a3;text-transform:uppercase;letter-spacing:.05em}
+#replay{display:flex;justify-content:center}
+.oj-player{max-width:1024px;width:100%}
+.oj-stage{position:relative;overflow:hidden;background:#fff;border-radius:8px 8px 0 0;border:1px solid #2a2f3a;border-bottom:0}
+.oj-stage .replayer-wrapper{transform-origin:0 0;position:absolute;left:0;top:0}
+.oj-stage iframe{border:0;pointer-events:none}
+.oj-controls{display:flex;align-items:center;gap:10px;padding:8px 12px;background:#1d212b;border:1px solid #2a2f3a;border-radius:0 0 8px 8px}
+.oj-controls button{background:#2a2f3a;color:#e6e9ef;border:0;border-radius:6px;padding:6px 12px;font-size:13px;cursor:pointer}
+.oj-controls button.oj-on{background:#6ea8fe;color:#0b0d12}
+.oj-progress{flex:1;height:8px;background:#0f1115;border-radius:4px;cursor:pointer;position:relative}
+.oj-progress-fill{height:100%;width:0;background:#6ea8fe;border-radius:4px;pointer-events:none}
+.oj-time{color:#8b93a3;font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
+`;
+
+// Mounts a session-replay player: @rrweb/replay's Replayer (the engine) plus a
+// minimal controller UI. rrweb-player@2.x dist builds are broken (they never
+// construct their Replayer), so OpenJam drives the engine directly.
+// Self-contained like renderReport so the export can embed it via toString.
+// Mount into a VISIBLE container — hidden containers measure 0x0.
+export function mountReplay(container, report, ReplayerCtor) {
+  var events = report.rrwebEvents || [];
+  if (!ReplayerCtor || events.length < 2) return null;
+
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  function fmt(ms) {
+    var s = Math.max(0, Math.round(ms / 1000));
+    return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+  }
+
+  var vw = (report.device && report.device.viewport) || {};
+  var pageW = vw.width || 1024;
+  var pageH = vw.height || 576;
+  var player = el("div", "oj-player");
+  var stage = el("div", "oj-stage");
+  var controls = el("div", "oj-controls");
+  var playBtn = el("button", null, "▶ Play");
+  var progress = el("div", "oj-progress");
+  var fill = el("div", "oj-progress-fill");
+  var time = el("div", "oj-time", "0:00 / 0:00");
+  progress.appendChild(fill);
+  controls.appendChild(playBtn);
+  controls.appendChild(progress);
+  controls.appendChild(time);
+  player.appendChild(stage);
+  player.appendChild(controls);
+  container.appendChild(player);
+
+  var replayer = new ReplayerCtor(events, { root: stage, speed: 1 });
+  var total = replayer.getMetaData().totalTime;
+  var playing = false;
+  var finished = false;
+  var rafId = null;
+
+  // Scale the recorded viewport to fit the stage width.
+  var stageW = Math.min(player.clientWidth || 1024, 1024);
+  var scale = Math.min(1, stageW / pageW);
+  stage.style.height = Math.round(pageH * scale) + "px";
+  var wrapper = stage.querySelector(".replayer-wrapper");
+  if (wrapper) wrapper.style.transform = "scale(" + scale + ")";
+
+  function paint() {
+    var t = Math.min(replayer.getCurrentTime(), total);
+    fill.style.width = (total ? (t / total) * 100 : 0) + "%";
+    time.textContent = fmt(t) + " / " + fmt(total);
+    if (playing) rafId = requestAnimationFrame(paint);
+  }
+  function setPlaying(on) {
+    playing = on;
+    playBtn.textContent = on ? "❚❚ Pause" : finished ? "↺ Replay" : "▶ Play";
+    if (rafId) cancelAnimationFrame(rafId);
+    if (on) rafId = requestAnimationFrame(paint);
+  }
+
+  playBtn.addEventListener("click", function () {
+    if (playing) {
+      replayer.pause();
+      setPlaying(false);
+    } else {
+      var from = finished ? 0 : replayer.getCurrentTime();
+      finished = false;
+      replayer.play(from >= total ? 0 : from);
+      setPlaying(true);
+    }
+  });
+  progress.addEventListener("click", function (e) {
+    var rect = progress.getBoundingClientRect();
+    var t = ((e.clientX - rect.left) / rect.width) * total;
+    finished = false;
+    if (playing) replayer.play(t);
+    else replayer.pause(t);
+    paint();
+  });
+  [1, 2, 4, 8].forEach(function (speed) {
+    var btn = el("button", speed === 1 ? "oj-on" : null, speed + "x");
+    btn.addEventListener("click", function () {
+      controls.querySelectorAll("button.oj-on").forEach(function (b) {
+        if (b !== playBtn) b.classList.remove("oj-on");
+      });
+      btn.classList.add("oj-on");
+      var t = replayer.getCurrentTime();
+      replayer.setConfig({ speed: speed });
+      if (playing) replayer.play(t);
+    });
+    controls.appendChild(btn);
+  });
+  replayer.on("finish", function () {
+    finished = true;
+    setPlaying(false);
+    paint();
+  });
+
+  replayer.pause(0); // render the first frame without starting playback
+  paint();
+  return replayer;
+}
+
 export function renderReport(container, report) {
   var events = (report.events || []).slice().sort(function (a, b) { return a.t - b.t; });
   var meta = report.meta || {};
