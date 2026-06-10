@@ -55,9 +55,13 @@ filterable timeline.
 
 ## Install (unpacked)
 
-1. Open `chrome://extensions`.
+No build needed: download the pre-built zip from the
+[latest release](https://github.com/SaintPepsi/openjam/releases/latest) and unzip it
+somewhere permanent. (Building from a clone works too — see Development below.)
+
+1. Open `chrome://extensions` (Edge: `edge://extensions`, Vivaldi: `vivaldi://extensions`).
 2. Enable **Developer mode** (top right).
-3. Click **Load unpacked** and select this `openjam/` folder.
+3. Click **Load unpacked** and select the unzipped (or cloned) folder.
 4. Pin OpenJam from the extensions menu.
 
 ## Use
