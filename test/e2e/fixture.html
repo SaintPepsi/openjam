@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>OpenJam E2E Fixture</title>
+<style>
+  body { font-family: sans-serif; margin: 40px; background: #fdf6e3; color: #333; }
+  h1 { color: #b58900; }
+  .card { background: #fff; border: 2px solid #268bd2; border-radius: 8px; padding: 16px; margin: 12px 0; max-width: 480px; }
+  #counter { font-size: 32px; font-weight: bold; color: #dc322f; }
+  button { background: #268bd2; color: #fff; border: 0; padding: 10px 18px; border-radius: 6px; font-size: 15px; cursor: pointer; }
+  .tall { height: 600px; background: linear-gradient(#eee8d5, #93a1a1); margin-top: 20px; padding: 10px; }
+</style>
+</head>
+<body>
+  <h1>OpenJam E2E Fixture</h1>
+  <div class="card">
+    <p>Deterministic page for replay verification.</p>
+    <label>Name: <input id="name" type="text" placeholder="type here"></label>
+    <label>Secret: <input id="secret" type="password" placeholder="password"></label>
+  </div>
+  <div class="card">
+    <div id="counter">0</div>
+    <button id="inc">Increment</button>
+  </div>
+  <div class="tall">Scroll target — bottom of the page.</div>
+  <script>
+    let n = 0;
+    document.getElementById("inc").addEventListener("click", () => {
+      n += 1;
+      document.getElementById("counter").textContent = String(n);
+      console.log("counter is now", n);
+    });
+  </script>
+</body>
+</html>

@@ -7,8 +7,8 @@ import { test, expect } from "bun:test";
 import { buildReportHTML } from "../report-builder.js";
 
 const replayAssets = {
-  PLAYER_UMD: "var rrwebPlayer=function(){};/*UMD_MARKER*/",
-  PLAYER_CSS: ".rr-player{}",
+  ENGINE_IIFE: "window.RRWebReplayer=function(){};/*UMD_MARKER*/",
+  ENGINE_CSS: ".replayer-wrapper{}",
 };
 
 function makeReport(rrwebCount, { title = "ok" } = {}) {
@@ -24,10 +24,10 @@ function makeReport(rrwebCount, { title = "ok" } = {}) {
   };
 }
 
-test("player UMD is embedded exactly once regardless of event count", () => {
+test("replay engine is embedded exactly once regardless of event count", () => {
   const html = buildReportHTML(makeReport(1000), replayAssets);
   expect(html.split("UMD_MARKER").length - 1).toBe(1);
-  expect(html.split(".rr-player{}").length - 1).toBe(1);
+  expect(html.split(".replayer-wrapper{}").length - 1).toBe(1);
 });
 
 test("export size grows linearly with replay events — no duplication blowup", () => {

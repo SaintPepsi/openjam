@@ -13,8 +13,8 @@
   },
   "license": "MIT",
   "dependencies": {
-    "rrweb": "2.0.1",
-    "rrweb-player": "2.0.1"
+    "@rrweb/replay": "2.0.1",
+    "rrweb": "2.0.1"
   },
   "devDependencies": {
     "esbuild": "0.28.0"

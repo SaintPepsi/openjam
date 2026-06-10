@@ -47,8 +47,8 @@ filterable timeline.
 1. Go to the page with the bug.
 2. Click the OpenJam icon → **Start recording**. Chrome shows a "being debugged" banner — that's the CDP attachment; leave it.
 3. Reproduce the bug. Hit **📸 Capture screenshot** at key moments if you want extra frames.
-4. Click **Stop & open report**. A timeline opens in a new tab.
-5. Click **⬇ Download self-contained HTML** to save a shareable file.
+4. Click **Stop & open report**. A new tab opens with the session replay on top and the timeline below.
+5. Click **⬇ Download self-contained HTML** to save a shareable file (replay included).
 
 ## Report viewer
 
@@ -62,7 +62,7 @@ Dev → build → test loop:
 
 ```sh
 git clone https://github.com/SaintPepsi/openjam.git && cd openjam
-npm install        # pinned deps: rrweb@2.0.1, rrweb-player@2.0.1, esbuild
+npm install        # pinned deps: rrweb@2.0.1, @rrweb/replay@2.0.1, esbuild
 npm run build      # see "When to rebuild" below
 npm test           # bun test — 17 tests (memory behaviors, export safety)
 ```
@@ -76,7 +76,7 @@ the OpenJam card, and reload the target page (so the content script re-injects).
 | You changed | Rebuild? | Why |
 |---|---|---|
 | `src/rrweb-recorder.js` | **Yes** | esbuild bundles it (+rrweb) into `dist/rrweb-recorder.js` |
-| rrweb / rrweb-player versions | **Yes** | regenerates the bundle and `src/generated/player-assets.js` |
+| rrweb / @rrweb/replay versions | **Yes** | regenerates the bundle and `src/generated/player-assets.js` |
 | `background.js`, `popup.*`, `viewer.*`, `renderer.js`, `report-builder.js` | No | loaded directly by the extension — just reload it |
 | `manifest.json` | No | reload the extension |
 
@@ -85,9 +85,12 @@ until you run `npm run build` once.
 
 **Testing:** `npm test` runs the [Bun](https://bun.sh) suite in `test/` — recorder buffer
 drainage, orphaned-recorder stop, session isolation, storage-quota degradation, export
-size/escaping bounds. The capture side (CDP + content-script messaging in a live tab)
-isn't unit-testable; dogfood it: record a real site, download the report, open it with
-the network off, and confirm the replay plays.
+size/escaping bounds. For end-to-end verification, `test/e2e/` has a deterministic
+fixture page and `build-export.mjs`, which turns a JSON file of real recorded rrweb
+events into an export — drive them with any browser automation (record on the fixture,
+build the export, assert the replay iframe renders the fixture content and reaches the
+final counter state). The full extension flow (load unpacked → record → stop → viewer →
+download) is also automatable via Playwright with `--load-extension`.
 
 ## Files
 
@@ -107,10 +110,15 @@ the network off, and confirm the replay plays.
 ## Session replay
 
 While recording, an rrweb recorder (content script, `src/rrweb-recorder.js`) captures the
-DOM and its mutations. The exported HTML embeds
-[rrweb-player](https://github.com/rrweb-io/rrweb/tree/master/packages/rrweb-player) plus
-the event stream, so the shared file plays the session back — scrubbable, offline, no
-dependencies. Replay uses rrweb defaults (passwords masked; other inputs visible).
+DOM and its mutations. The replay plays in the in-extension report page AND in the
+exported HTML — scrubbable, offline, no dependencies. Replay uses rrweb defaults
+(passwords masked; other inputs visible).
+
+Playback is [@rrweb/replay](https://www.npmjs.com/package/@rrweb/replay)'s `Replayer`
+driven by OpenJam's own controller (`mountReplay` in `renderer.js`). We don't use
+`rrweb-player`: its 2.x dist builds ship without the code that constructs the Replayer
+(verified across the 2.0.0/2.0.1 UMD and ESM artifacts — the player shell mounts but no
+replay iframe is ever created), and `build.mjs` bundles the engine directly instead.
 
 ## Known limitations (v0.2.0 — MVP, see plans/MVP_PLAN.md for the cut list)
 
