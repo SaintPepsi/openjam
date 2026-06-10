@@ -56,15 +56,53 @@ filterable timeline.
 - Full-text search across titles and payloads.
 - Click any row to expand: headers, request/response bodies (pretty-printed JSON), stack traces, full screenshots.
 
+## Development
+
+Dev → build → test loop:
+
+```sh
+git clone https://github.com/SaintPepsi/openjam.git && cd openjam
+npm install        # pinned deps: rrweb@2.0.1, rrweb-player@2.0.1, esbuild
+npm run build      # see "When to rebuild" below
+npm test           # bun test — 17 tests (memory behaviors, export safety)
+```
+
+Then load the extension: `chrome://extensions` → Developer mode → **Load unpacked** →
+this folder. After each code change: rebuild (if needed), click the **↻ reload** icon on
+the OpenJam card, and reload the target page (so the content script re-injects).
+
+**When to rebuild (`npm run build`):**
+
+| You changed | Rebuild? | Why |
+|---|---|---|
+| `src/rrweb-recorder.js` | **Yes** | esbuild bundles it (+rrweb) into `dist/rrweb-recorder.js` |
+| rrweb / rrweb-player versions | **Yes** | regenerates the bundle and `src/generated/player-assets.js` |
+| `background.js`, `popup.*`, `viewer.*`, `renderer.js`, `report-builder.js` | No | loaded directly by the extension — just reload it |
+| `manifest.json` | No | reload the extension |
+
+`dist/` and `src/generated/` are build outputs (gitignored) — a fresh clone won't load
+until you run `npm run build` once.
+
+**Testing:** `npm test` runs the [Bun](https://bun.sh) suite in `test/` — recorder buffer
+drainage, orphaned-recorder stop, session isolation, storage-quota degradation, export
+size/escaping bounds. The capture side (CDP + content-script messaging in a live tab)
+isn't unit-testable; dogfood it: record a real site, download the report, open it with
+the network off, and confirm the replay plays.
+
 ## Files
 
 | File | Role |
 |---|---|
 | `manifest.json` | MV3 manifest |
-| `background.js` | Capture engine — CDP attach, event routing, report assembly |
-| `report-builder.js` | Generates the self-contained HTML timeline |
+| `background.js` | Capture engine — CDP attach, event routing, rrweb orchestration, report assembly |
+| `src/rrweb-recorder.js` | Content-script session recorder (bundled to `dist/rrweb-recorder.js`) |
+| `build.mjs` | esbuild: bundles the recorder, generates `src/generated/player-assets.js` |
+| `report-builder.js` | Generates the self-contained HTML export (timeline + replay player) |
+| `renderer.js` | Shared timeline renderer (extension page + embedded in exports) |
 | `popup.html` / `popup.js` | Start/stop/screenshot controls |
-| `viewer.html` | Renders the report and handles file export |
+| `viewer.html` / `viewer.js` | Renders the report and handles file export |
+| `test/` | Bun test suite |
+| `plans/` | Verified phase plans + MVP plan; `REPLAY_DESIGN.md` is the architecture |
 
 ## Session replay
 
