@@ -120,7 +120,7 @@ dependencies. Replay uses rrweb defaults (passwords masked; other inputs visible
 - Only the most recent report is kept in extension storage (quota); download the HTML to keep a capture.
 - Canvas/WebGL, video frames, and cross-origin iframes replay imperfectly (DOM replay, not pixels — see `plans/PHASE_3_PLAN.md`).
 - Images may not render in offline replay (rrweb `inlineImages` default off); structure and text replay faithfully.
-- Chromium-only (Chrome, Vivaldi, Edge, Brave). Firefox/Safari need the injection pivot in `plans/PHASE_4_PLAN.md`.
+- Chromium-only (Chrome, Vivaldi, Edge, Brave), **Chrome ≥118 required**: from 118 an active `chrome.debugger` session keeps the background service worker alive for the whole recording ([SW lifecycle docs](https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle)); on older versions a long idle recording can be evicted. Firefox/Safari need the injection pivot in `plans/PHASE_4_PLAN.md`.
 
 ## Roadmap (researched & verified plans in plans/)
 
