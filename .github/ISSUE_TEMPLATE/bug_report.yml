@@ -1,0 +1,44 @@
+name: Bug report
+description: Something in OpenJam itself broke (not a bug you were recording!)
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        > [!WARNING]
+        > **Remove any PII before submitting.** Issues are public — check error
+        > text, screenshots, and URLs for names, emails, internal hostnames,
+        > and tokens before you post them here.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What were you doing, what did you expect, what occurred?
+    validations:
+      required: true
+  - type: textarea
+    id: error
+    attributes:
+      label: Error text
+      render: shell
+  - type: input
+    id: version
+    attributes:
+      label: OpenJam version
+      placeholder: "0.2.0"
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser + version
+      placeholder: "Edge 126, Vivaldi 6.8, Chrome 126…"
+    validations:
+      required: true
+  - type: checkboxes
+    id: pii
+    attributes:
+      label: Privacy check
+      options:
+        - label: I checked this report and removed all PII / internal data
+          required: true

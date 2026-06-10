@@ -1,5 +1,8 @@
 // Popup controller: reflects recording state and drives start/stop/screenshot.
 
+import { renderErrorReport } from "./issue-link.js";
+
+const ENV = { version: chrome.runtime.getManifest().version, userAgent: navigator.userAgent };
 const toggle = document.getElementById("toggle");
 const shot = document.getElementById("shot");
 const dot = document.getElementById("dot");
@@ -30,11 +33,11 @@ toggle.addEventListener("click", async () => {
   toggle.disabled = true;
   if (status.recording) {
     const res = await send("stop");
-    if (!res.ok) hint.textContent = res.error;
+    if (!res.ok) renderErrorReport(hint, res.error, ENV);
     else window.close();
   } else {
     const res = await send("start");
-    if (!res.ok) hint.textContent = res.error;
+    if (!res.ok) renderErrorReport(hint, res.error, ENV);
     await refresh();
   }
   toggle.disabled = false;

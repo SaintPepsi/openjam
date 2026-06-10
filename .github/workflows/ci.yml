@@ -1,0 +1,29 @@
+# Unit (bun) + end-to-end (Playwright, real extension loaded headless — the
+# chromium channel runs extensions in new headless mode, no xvfb needed:
+# https://playwright.dev/docs/chrome-extensions).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: lts/*
+      - uses: oven-sh/setup-bun@v2
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-failure-context
+          path: test-results/

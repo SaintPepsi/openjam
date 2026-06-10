@@ -3,7 +3,7 @@
   "name": "OpenJam",
   "version": "0.2.0",
   "description": "Capture console logs, network requests, screenshots and device info on one timeline, then export a self-contained bug report. Open-source Jam.dev.",
-  "permissions": ["debugger", "tabs", "storage", "activeTab", "scripting"],
+  "permissions": ["debugger", "tabs", "storage", "unlimitedStorage", "activeTab", "scripting"],
   "host_permissions": ["<all_urls>"],
   "background": { "service_worker": "background.js", "type": "module" },
   "content_scripts": [
@@ -13,5 +13,20 @@
       "run_at": "document_start"
     }
   ],
-  "action": { "default_popup": "popup.html", "default_title": "OpenJam" }
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "OpenJam",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  }
 }
