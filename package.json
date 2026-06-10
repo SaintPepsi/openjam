@@ -5,7 +5,8 @@
   "description": "Open-source jam.dev alternative: Chrome MV3 extension capturing console/network/errors/screenshots/device + rrweb session replay on one timeline, exported as a self-contained HTML bug report.",
   "scripts": {
     "build": "node build.mjs",
-    "test": "bun test",
+    "test": "bun test test/",
+    "test:e2e": "playwright test",
     "screenshots": "node scripts/screenshots.mjs",
     "icons": "node scripts/icons.mjs",
     "package": "npm run build && zip -r openjam.zip manifest.json LICENSE background.js issue-link.js popup.html popup.js viewer.html viewer.js renderer.js report-builder.js icons dist src/generated"
@@ -20,6 +21,7 @@
     "rrweb": "2.0.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "esbuild": "0.28.0",
     "playwright": "^1.60.0"
   }

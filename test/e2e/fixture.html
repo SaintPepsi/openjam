@@ -22,6 +22,7 @@
   <div class="card">
     <div id="counter">0</div>
     <button id="inc">Increment</button>
+    <button id="fetchBtn">Fetch self</button>
   </div>
   <div class="tall">Scroll target — bottom of the page.</div>
   <script>
@@ -30,6 +31,10 @@
       n += 1;
       document.getElementById("counter").textContent = String(n);
       console.log("counter is now", n);
+    });
+    // Deterministic network traffic for e2e: re-fetch this very page.
+    document.getElementById("fetchBtn").addEventListener("click", () => {
+      fetch(location.href).then((r) => console.log("fetched self:", r.status));
     });
   </script>
 </body>

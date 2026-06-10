@@ -100,14 +100,17 @@ the OpenJam card, and reload the target page (so the content script re-injects).
 `dist/` and `src/generated/` are build outputs (gitignored) — a fresh clone won't load
 until you run `npm run build` once.
 
-**Testing:** `npm test` runs the [Bun](https://bun.sh) suite in `test/` — recorder buffer
-drainage, orphaned-recorder stop, session isolation, storage-quota degradation, export
-size/escaping bounds. For end-to-end verification, `test/e2e/` has a deterministic
-fixture page and `build-export.mjs`, which turns a JSON file of real recorded rrweb
-events into an export — drive them with any browser automation (record on the fixture,
-build the export, assert the replay iframe renders the fixture content and reaches the
-final counter state). The full extension flow (load unpacked → record → stop → viewer →
-download) is also automatable via Playwright with `--load-extension`.
+**Testing:** `npm test` runs the [Bun](https://bun.sh) unit suite in `test/` — recorder
+buffer drainage, orphaned-recorder stop, session isolation, storage-quota degradation,
+export size/escaping bounds, issue-link prefills. `npm run test:e2e` runs the
+[Playwright](https://playwright.dev/docs/chrome-extensions) end-to-end suite in `e2e/`
+(`npx playwright install chromium` once): it loads the real unpacked extension headless,
+records the deterministic fixture (`test/e2e/fixture.html`), and asserts console/network/
+screenshot rows land on the timeline, the replay plays back to the fixture's final state
+(passwords masked), the downloaded export replays fully offline, restricted `chrome://`
+pages fail with a reportable error, and storage keeps only the newest report. Shared
+driving helpers live in `test/e2e/harness.mjs` — the screenshot generator uses the same
+ones.
 
 ## Files
 

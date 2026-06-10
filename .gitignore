@@ -4,3 +4,4 @@ src/generated/
 *.log
 .DS_Store
 openjam.zip
+test-results/
