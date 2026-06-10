@@ -158,3 +158,17 @@ replay iframe is ever created), and `build.mjs` bundles the engine directly inst
 - `PHASE_3_PLAN.md` — hybrid CDP pixel keyframes for canvas/WebGL/cross-origin
 - `PHASE_4_PLAN.md` — Firefox/Safari via injection-based capture
 - Audio capture (tab audio / mic narration) on the timeline — requested by first users
+
+## Reporting OpenJam bugs
+
+When OpenJam itself fails (not the page you're recording — that's the product working),
+the popup and report viewer show a **Report this on GitHub →** link that pre-fills an
+issue with the error, extension version, and browser UA — nothing else. Issues are
+public: **remove any PII** (names, emails, internal URLs, tokens) before submitting.
+
+## License
+
+[GPL-3.0-or-later](LICENSE) — free to use, modify, and redistribute; copies and
+derivatives must remain open source under the same terms. The vendored
+[Fluent Emoji](https://github.com/microsoft/fluentui-emoji) SVGs in `assets/iconify/`
+are MIT (GPL-compatible).

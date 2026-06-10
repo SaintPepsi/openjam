@@ -8,13 +8,13 @@
     "test": "bun test",
     "screenshots": "node scripts/screenshots.mjs",
     "icons": "node scripts/icons.mjs",
-    "package": "npm run build && zip -r openjam.zip manifest.json background.js popup.html popup.js viewer.html viewer.js renderer.js report-builder.js icons dist src/generated"
+    "package": "npm run build && zip -r openjam.zip manifest.json LICENSE background.js issue-link.js popup.html popup.js viewer.html viewer.js renderer.js report-builder.js icons dist src/generated"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/SaintPepsi/openjam.git"
   },
-  "license": "MIT",
+  "license": "GPL-3.0-or-later",
   "dependencies": {
     "@rrweb/replay": "2.0.1",
     "rrweb": "2.0.1"

@@ -17,6 +17,8 @@
   .dot.live{background:var(--red);box-shadow:0 0 0 3px rgba(248,81,73,.25)}
   .count{color:var(--muted);margin-left:auto;font-variant-numeric:tabular-nums}
   .hint{color:var(--muted);font-size:11px;margin-top:6px}
+  .hint a{color:var(--accent);display:inline-block;margin-top:4px}
+  .pii-warning{margin-top:6px;padding:8px;border:1px solid #d29922;border-radius:6px;background:rgba(210,153,34,.15);color:#e3b341;font-weight:600}
 </style>
 </head>
 <body>
@@ -26,6 +28,6 @@
   <button id="toggle" class="primary">Start recording</button>
   <button id="shot" class="ghost" disabled>📸 Capture screenshot</button>
   <div class="hint" id="hint">Records console, network, errors &amp; screenshots on the active tab.</div>
-  <script src="popup.js"></script>
+  <script type="module" src="popup.js"></script>
 </body>
 </html>
