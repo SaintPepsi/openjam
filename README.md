@@ -145,7 +145,7 @@ replay iframe is ever created), and `build.mjs` bundles the engine directly inst
 
 - Console/network history before **Start** is not captured — recording is forward-only.
 - Response bodies are captured only for text-like types under 100 KB (configurable via `BODY_CAPTURE_MAX_BYTES` in `background.js`).
-- Replay events are held in memory uncompressed — keep captures short (minutes, not hours). If a report exceeds the [~10 MB storage quota](https://developer.chrome.com/docs/extensions/reference/api/storage), it degrades in layers: replay dropped (noted on the timeline), then screenshot pixels.
+- Replay events are held in memory uncompressed — keep captures short (minutes, not hours). The manifest requests [`unlimitedStorage`](https://developer.chrome.com/docs/extensions/reference/api/storage#storage_areas), so the ~10 MB `chrome.storage.local` quota doesn't apply; if a save still fails (disk pressure), the report degrades in layers: replay dropped (noted on the timeline), then screenshot pixels.
 - Only the most recent report is kept in extension storage (quota); download the HTML to keep a capture.
 - Canvas/WebGL, video frames, and cross-origin iframes replay imperfectly (DOM replay, not pixels — see `plans/PHASE_3_PLAN.md`).
 - Images may not render in offline replay (rrweb `inlineImages` default off); structure and text replay faithfully.
@@ -157,3 +157,4 @@ replay iframe is ever created), and `build.mjs` bundles the engine directly inst
 - `PHASE_2_PLAN.md` — compressed exports (fflate) for large captures
 - `PHASE_3_PLAN.md` — hybrid CDP pixel keyframes for canvas/WebGL/cross-origin
 - `PHASE_4_PLAN.md` — Firefox/Safari via injection-based capture
+- Audio capture (tab audio / mic narration) on the timeline — requested by first users

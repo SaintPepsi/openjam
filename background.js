@@ -389,10 +389,11 @@ async function stopRecording() {
   return { ok: true, eventCount: report.events.length };
 }
 
-// Reports carry base64 screenshots and replay events, and chrome.storage.local
-// is capped at ~10 MB (https://developer.chrome.com/docs/extensions/reference/api/storage).
-// Keep only the newest report, and degrade in layers rather than failing the
-// capture: full report → drop replay → drop screenshot pixels.
+// Reports carry base64 screenshots and replay events. The manifest requests
+// unlimitedStorage, which lifts chrome.storage.local's ~10 MB quota
+// (https://developer.chrome.com/docs/extensions/reference/api/storage#storage_areas),
+// but keep the layered degradation as a backstop (disk pressure, browsers
+// that cap anyway): full report → drop replay → drop screenshot pixels.
 async function saveReport(key, report) {
   try {
     const existing = await chrome.storage.local.get(null);
