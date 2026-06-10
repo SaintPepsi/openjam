@@ -457,8 +457,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         });
         break;
       case "start": {
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        sendResponse(await startRecording(tab.id));
+        // msg.tabId lets automation (e2e, screenshot scripts) target a tab
+        // explicitly; the popup omits it and records the active tab.
+        let tabId = msg.tabId;
+        if (tabId == null) {
+          const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+          tabId = tab.id;
+        }
+        sendResponse(await startRecording(tabId));
         break;
       }
       case "stop":
