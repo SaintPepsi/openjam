@@ -82,7 +82,8 @@ Dev → build → test loop:
 git clone https://github.com/SaintPepsi/openjam.git && cd openjam
 npm install        # pinned deps: rrweb@2.0.1, @rrweb/replay@2.0.1, esbuild
 npm run build      # see "When to rebuild" below
-npm test           # bun test — 17 tests (memory behaviors, export safety)
+npm test           # bun unit suite (memory behaviors, export safety, issue links)
+npm run test:e2e   # Playwright end-to-end suite (real extension, headless)
 ```
 
 Then load the extension: `chrome://extensions` → Developer mode → **Load unpacked** →
