@@ -175,6 +175,11 @@ the popup and report viewer show a **Report this on GitHub →** link that pre-f
 issue with the error, extension version, and browser UA — nothing else. Issues are
 public: **remove any PII** (names, emails, internal URLs, tokens) before submitting.
 
+## Support this project
+
+If OpenJam saves you a bug-report headache, you can
+[sponsor @SaintPepsi on GitHub](https://github.com/sponsors/SaintPepsi) ☕
+
 ## License
 
 [GPL-3.0-or-later](LICENSE) — free to use, modify, and redistribute; copies and
