@@ -29,9 +29,17 @@ leaves your machine is you sharing an exported file yourself.
 |---|---|
 | `debugger` | Attach the Chrome DevTools Protocol to the recorded tab — the source of console/network/error/screenshot events |
 | `<all_urls>` host access | Record whichever page the bug is on |
-| `tabs`, `activeTab` | Identify the tab being recorded |
-| `scripting` | Run the session-replay recorder in the recorded page |
+| `scripting` | Inject the session-replay recorder into pages that were already open before OpenJam was installed |
 | `storage`, `unlimitedStorage` | Save the report locally without a size cap |
+
+## Limited Use disclosure
+
+OpenJam's use of user data complies with the
+[Chrome Web Store User Data Policy](https://developer.chrome.com/docs/webstore/program-policies/limited-use),
+including the Limited Use requirements: captured data is used solely to
+provide the user-facing recording feature described on the store listing and
+in the extension UI, is never transferred to anyone, and is never used for
+advertising, creditworthiness, or any other purpose.
 
 ## Error reporting
 

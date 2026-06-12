@@ -119,12 +119,16 @@ test("exported HTML is self-contained and replays offline", async () => {
 });
 
 test("restricted pages fail with a reportable error", async () => {
+  // Without the `tabs` permission, tabs.query can't url-match chrome:// pages
+  // (host permissions don't cover that scheme) — so exercise the background's
+  // real active-tab path: focus the restricted tab and start with no tabId,
+  // exactly like a popup click.
+  const popup = await openPopup(context, extensionId);
   const restricted = await context.newPage();
   await restricted.goto("chrome://version/");
-  const popup = await openPopup(context, extensionId);
-  const tabId = await tabIdOf(popup, "chrome://version/");
+  await restricted.bringToFront();
 
-  const res = await sendAction(popup, { action: "start", tabId });
+  const res = await sendAction(popup, { action: "start" });
   expect(res.ok).toBe(false);
   expect(res.error).toContain("chrome://");
 
