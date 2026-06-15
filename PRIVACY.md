@@ -1,6 +1,6 @@
 # OpenJam Privacy Policy
 
-_Last updated: 2026-06-10_
+_Last updated: 2026-06-15_
 
 OpenJam records browser sessions **entirely on your machine**. There is no
 backend, no account, no analytics, and no telemetry.
@@ -22,6 +22,20 @@ to wherever you choose to save them.
 
 **Nothing is ever transmitted off your device by OpenJam.** The only way data
 leaves your machine is you sharing an exported file yourself.
+
+## Recording untrusted pages
+
+To replay modern styling correctly, the session-replay recorder runs **inside
+the recorded page's own context**. A side effect is that a malicious page can
+read or tamper with **its own** capture while you record it — it can see the
+replay data OpenJam collects about that page (the same DOM and inputs it already
+controls), inject misleading events, or stop the recording. This is confined to
+that one tab's own report; it cannot reach other tabs, other sites, or reports
+already saved, and (as above) nothing leaves your machine.
+
+It only matters if you record a page that is actively hostile — debugging your
+own app or a site you trust is unaffected. **Only record pages you trust, and
+treat the replay of an untrusted page as untrustworthy.**
 
 ## Permissions
 
