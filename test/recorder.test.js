@@ -1,10 +1,13 @@
-// Memory-behavior tests for the content-script recorder (src/rrweb-recorder.js):
-// the batch buffer must always drain (flush interval, pagehide, stop), never
-// retain events after a failed send, and stop recording when the background
-// answers {stop:true} (orphaned-recorder guard).
+// Memory-behavior tests for the MAIN-world recorder (src/rrweb-recorder.js):
+// the batch buffer must always drain (flush interval, pagehide, stop), and the
+// recorder must start/stop on the relay's commands. The recorder has no
+// chrome.* APIs in the main world — it speaks only to the isolated-world relay
+// (src/rrweb-relay.js) over window.postMessage.
 import { test, expect, mock } from "bun:test";
 
 const FLUSH_WAIT_MS = 650; // recorder flushes every 500ms
+const TO_RELAY = "oj-rec-to-relay"; // recorder -> relay
+const FROM_RELAY = "oj-relay-to-rec"; // relay -> recorder
 
 let currentEmit = null;
 let recordCalls = 0;
@@ -20,96 +23,75 @@ mock.module("rrweb", () => ({
   },
 }));
 
-const env = { batchResponse: { ok: true }, helloResponse: { record: true }, throwOnSend: false };
-const sentBatches = [];
-const messageListeners = [];
+const posted = [];
 const windowEvents = {};
-
 globalThis.window = {
   addEventListener(name, fn) {
     windowEvents[name] = fn;
   },
-};
-globalThis.chrome = {
-  runtime: {
-    lastError: undefined,
-    sendMessage(msg, cb) {
-      if (msg.type === "oj-rrweb-hello") {
-        if (cb) cb(env.helloResponse);
-        return;
-      }
-      if (env.throwOnSend) throw new Error("Extension context invalidated");
-      sentBatches.push(msg.events);
-      if (cb) cb(env.batchResponse);
-    },
-    onMessage: {
-      addListener(fn) {
-        messageListeners.push(fn);
-      },
-    },
+  postMessage(msg) {
+    posted.push(msg);
   },
 };
 
-function dispatch(msg) {
-  for (const fn of messageListeners) fn(msg, {}, () => {});
+// Deliver a relay->recorder command to the recorder's message listener.
+function fromRelay(kind) {
+  windowEvents.message({ source: globalThis.window, data: { __oj: FROM_RELAY, kind } });
 }
+const batches = () =>
+  posted.filter((m) => m.__oj === TO_RELAY && m.kind === "batch").map((m) => m.events);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 await import("../src/rrweb-recorder.js");
 
-test("starts on hello and drains the buffer on the flush interval", async () => {
+test("announces readiness on load so the relay can start/resume it", () => {
+  expect(posted.some((m) => m.__oj === TO_RELAY && m.kind === "ready")).toBe(true);
+});
+
+test("starts on the relay's start command and drains the buffer on the flush interval", async () => {
+  fromRelay("start");
   expect(recordCalls).toBe(1);
   currentEmit({ type: 3, timestamp: 1 });
   currentEmit({ type: 3, timestamp: 2 });
   currentEmit({ type: 3, timestamp: 3 });
-  expect(sentBatches.length).toBe(0); // buffered, not yet flushed
+  expect(batches().length).toBe(0); // buffered, not yet flushed
   await sleep(FLUSH_WAIT_MS);
-  expect(sentBatches.length).toBe(1);
-  expect(sentBatches[0].length).toBe(3);
+  expect(batches().length).toBe(1);
+  expect(batches()[0].length).toBe(3);
   // empty buffer must not produce empty batches
   await sleep(FLUSH_WAIT_MS);
-  expect(sentBatches.length).toBe(1);
+  expect(batches().length).toBe(1);
 });
 
-test("buffer does not grow when sendMessage throws — events are dropped, not retained", async () => {
-  env.throwOnSend = true;
+test("each flush drains the buffer — events are never retained across batches", async () => {
+  const before = batches().length;
   currentEmit({ type: 3, timestamp: 4 });
   currentEmit({ type: 3, timestamp: 5 });
   await sleep(FLUSH_WAIT_MS);
-  expect(sentBatches.length).toBe(1); // nothing arrived
-  env.throwOnSend = false;
+  expect(batches().length).toBe(before + 1);
   currentEmit({ type: 3, timestamp: 6 });
   await sleep(FLUSH_WAIT_MS);
-  // only the new event ships; the two failed ones were not re-buffered
-  expect(sentBatches.length).toBe(2);
-  expect(sentBatches[1].length).toBe(1);
-  expect(sentBatches[1][0].timestamp).toBe(6);
+  expect(batches().length).toBe(before + 2);
+  expect(batches()[before + 1].length).toBe(1);
+  expect(batches()[before + 1][0].timestamp).toBe(6);
 });
 
-test("stops recording when the background answers {stop:true} (orphaned recorder)", async () => {
-  env.batchResponse = { stop: true };
+test("stops when the relay sends stop (orphaned recorder / explicit stop) and flushes the tail", () => {
+  const before = batches().length;
   currentEmit({ type: 3, timestamp: 7 });
-  await sleep(FLUSH_WAIT_MS);
+  fromRelay("stop");
   expect(stopCalls).toBe(1);
-  env.batchResponse = { ok: true };
+  expect(batches().length).toBe(before + 1);
+  expect(batches()[before][0].timestamp).toBe(7);
 });
 
-test("pagehide flushes the partial buffer immediately (no tail loss on navigation)", async () => {
-  dispatch({ action: "oj-rrweb-start" }); // restart after the orphan stop
+test("pagehide flushes the partial buffer immediately (no tail loss on navigation)", () => {
+  fromRelay("start"); // restart after the stop above
   expect(recordCalls).toBe(2);
-  const before = sentBatches.length;
+  const before = batches().length;
   currentEmit({ type: 3, timestamp: 8 });
   currentEmit({ type: 3, timestamp: 9 });
   windowEvents.pagehide(); // no 500ms wait
-  expect(sentBatches.length).toBe(before + 1);
-  expect(sentBatches[sentBatches.length - 1].length).toBe(2);
-});
-
-test("explicit stop flushes remaining events and halts the recorder", async () => {
-  const before = sentBatches.length;
-  currentEmit({ type: 3, timestamp: 10 });
-  dispatch({ action: "oj-rrweb-stop" });
-  expect(stopCalls).toBe(2);
-  expect(sentBatches.length).toBe(before + 1);
-  expect(sentBatches[sentBatches.length - 1][0].timestamp).toBe(10);
+  expect(batches().length).toBe(before + 1);
+  expect(batches()[before].length).toBe(2);
 });

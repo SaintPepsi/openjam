@@ -11,6 +11,11 @@
   button { background: #268bd2; color: #fff; border: 0; padding: 10px 18px; border-radius: 6px; font-size: 15px; cursor: pointer; }
   .tall { height: 600px; background: linear-gradient(#eee8d5, #93a1a1); margin-top: 20px; padding: 10px; }
 </style>
+<!-- A persistent, initially-empty stylesheet. It is snapshotted empty when
+     recording starts; #injectStyle later adds a rule into THIS existing sheet
+     (no DOM mutation), which rrweb can only observe via its insertRule patch —
+     i.e. only from the MAIN world. This is the isolated-world regression guard. -->
+<style id="dynsheet"></style>
 </head>
 <body>
   <h1>OpenJam E2E Fixture</h1>
@@ -24,6 +29,15 @@
     <button id="inc">Increment</button>
     <button id="fetchBtn">Fetch self</button>
   </div>
+  <!-- #cssinjs has NO static style; #injectStyle styles it at runtime via
+       CSSStyleSheet.insertRule, the way Emotion/styled-components do (the
+       <style> tag's text stays empty — the rule lives only in the CSSOM). The
+       recorder only captures it from the MAIN world, so this is the regression
+       guard for the isolated-world styling bug. -->
+  <div class="card">
+    <div id="cssinjs">Runtime-styled via insertRule</div>
+    <button id="injectStyle">Inject style</button>
+  </div>
   <div class="tall">Scroll target — bottom of the page.</div>
   <script>
     let n = 0;
@@ -35,6 +49,16 @@
     // Deterministic network traffic for e2e: re-fetch this very page.
     document.getElementById("fetchBtn").addEventListener("click", () => {
       fetch(location.href).then((r) => console.log("fetched self:", r.status));
+    });
+    // CSS-in-JS at runtime: insert a rule into the pre-existing #dynsheet
+    // stylesheet (Emotion's "speedy" mode — the <style> stays in the DOM, its
+    // text stays empty, the rule lives only in the CSSOM). No DOM mutation, so
+    // rrweb can only capture this via its insertRule patch (MAIN world only).
+    document.getElementById("injectStyle").addEventListener("click", () => {
+      document
+        .getElementById("dynsheet")
+        .sheet.insertRule("#cssinjs{background:rgb(42,161,152);color:#fff;padding:18px}", 0);
+      console.log("style injected");
     });
   </script>
 </body>

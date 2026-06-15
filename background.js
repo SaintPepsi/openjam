@@ -273,10 +273,13 @@ async function startReplayRecorder(tabId) {
   try {
     await chrome.tabs.sendMessage(tabId, { action: "oj-rrweb-start" });
   } catch {
-    // Content script absent (e.g. extension was reloaded after the page
-    // loaded, or a restricted page). Inject and retry once.
+    // Content scripts absent (e.g. extension was reloaded after the page
+    // loaded, or a restricted page). Inject both halves and retry once: the
+    // rrweb recorder into the MAIN world (so its CSS observers patch the page's
+    // own stylesheet APIs) and the relay into the isolated world (for chrome.*).
     try {
-      await chrome.scripting.executeScript({ target: { tabId }, files: ["dist/rrweb-recorder.js"] });
+      await chrome.scripting.executeScript({ target: { tabId }, files: ["dist/rrweb-recorder.js"], world: "MAIN" });
+      await chrome.scripting.executeScript({ target: { tabId }, files: ["dist/rrweb-relay.js"] });
       await chrome.tabs.sendMessage(tabId, { action: "oj-rrweb-start" });
     } catch (err) {
       pushEvent({

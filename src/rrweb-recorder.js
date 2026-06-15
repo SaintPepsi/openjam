@@ -1,31 +1,34 @@
-// rrweb session recorder. Runs as an ISOLATED-world content script at
-// document_start; bundled by build.mjs into dist/rrweb-recorder.js.
-// Streams events to the background in small batches (plus a pagehide flush so
-// the tail of a navigation isn't lost) and no single message grows unbounded.
-// If the background answers a batch with {stop:true} the session has ended
-// (e.g. the user dismissed the debug banner) — stop recording immediately
-// rather than serializing the page forever.
+// rrweb session recorder — runs in the page's MAIN world (manifest sets
+// "world":"MAIN") so rrweb can patch the page's own CSSStyleSheet.prototype
+// .insertRule / .deleteRule and the adoptedStyleSheets setters. An
+// isolated-world content script patches a *different* copy of those prototypes,
+// so CSS-in-JS frameworks (Emotion/Chakra, styled-components, MUI, …) that
+// inject rules at runtime would record with their styles missing and replay
+// unstyled. The MAIN world has no chrome.* APIs, so this script talks to the
+// isolated-world relay (src/rrweb-relay.js) over window.postMessage; the relay
+// bridges to the background worker. Bundled by build.mjs into
+// dist/rrweb-recorder.js, injected at document_start so the patch is installed
+// before the page's framework runs.
 import { record } from "rrweb";
 
 const FLUSH_INTERVAL_MS = 500;
+const TO_RELAY = "oj-rec-to-relay"; // envelope tag for messages we send
+const FROM_RELAY = "oj-relay-to-rec"; // envelope tag for messages we receive
 
 function main() {
   let stopFn = null;
   let buffer = [];
   let flushTimer = null;
 
+  function post(kind, extra) {
+    window.postMessage({ __oj: TO_RELAY, kind, ...extra }, "*");
+  }
+
   function flush() {
     if (!buffer.length) return;
-    const batch = buffer;
-    buffer = [];
-    try {
-      chrome.runtime.sendMessage({ type: "oj-rrweb-batch", events: batch }, (res) => {
-        if (chrome.runtime.lastError) return;
-        if (res && res.stop) stop();
-      });
-    } catch {
-      // extension reloaded mid-recording — nothing useful to do
-    }
+    const events = buffer;
+    buffer = []; // drain before posting so a failed transport never re-buffers
+    post("batch", { events });
   }
 
   function start() {
@@ -55,27 +58,24 @@ function main() {
     flush();
   }
 
-  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-    if (msg.action === "oj-rrweb-start") {
-      start();
-      sendResponse({ ok: true });
-    } else if (msg.action === "oj-rrweb-stop") {
-      stop();
-      sendResponse({ ok: true });
-    }
+  window.addEventListener("message", (e) => {
+    if (e.source !== window || !e.data || e.data.__oj !== FROM_RELAY) return;
+    // The relay forwards start/stop. A {stop:true} answer to a batch (orphaned
+    // recorder, e.g. the debug banner was dismissed) also arrives here as "stop".
+    if (e.data.kind === "start") start();
+    else if (e.data.kind === "stop") stop();
   });
 
   // Don't lose the last partial batch when the page navigates away.
   window.addEventListener("pagehide", flush);
 
-  // If this page loaded mid-recording (navigation), ask whether to resume.
-  chrome.runtime.sendMessage({ type: "oj-rrweb-hello" }, (res) => {
-    if (chrome.runtime.lastError) return;
-    if (res && res.record) start();
-  });
+  // Announce readiness: a relay that loaded first (or resumed after a
+  // mid-recording navigation) re-sends "start" once it sees this.
+  post("ready");
 }
 
-// Guard against double injection (manifest + scripting.executeScript fallback).
+// Guard against double injection (manifest entry + scripting.executeScript
+// fallback). The flag lives on the page window, shared across MAIN-world runs.
 if (!window.__ojRecorderLoaded) {
   window.__ojRecorderLoaded = true;
   main();
