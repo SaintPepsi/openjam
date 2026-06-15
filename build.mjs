@@ -20,6 +20,17 @@ await build({
   logLevel: "info",
 });
 
+// Isolated-world bridge that forwards the MAIN-world recorder's batches to the
+// background worker (the recorder has no chrome.* APIs in the main world).
+await build({
+  entryPoints: ["src/rrweb-relay.js"],
+  bundle: true,
+  format: "iife",
+  minify: true,
+  outfile: "dist/rrweb-relay.js",
+  logLevel: "info",
+});
+
 await build({
   stdin: {
     contents: 'import { Replayer } from "@rrweb/replay";\nwindow.RRWebReplayer = Replayer;\n',

@@ -33,7 +33,7 @@ test.afterAll(async () => {
 
 // Records the fixture with console + network + screenshot activity and
 // resolves with the viewer page. Used by the first three tests.
-async function recordSession() {
+async function recordSession({ injectStyle = false } = {}) {
   const fixture = await context.newPage();
   await fixture.goto(fixtureServer.url, { waitUntil: "load" });
   const popup = await openPopup(context, extensionId);
@@ -43,6 +43,9 @@ async function recordSession() {
   expect(started.ok).toBe(true);
 
   await fixture.bringToFront();
+  // Inject the runtime CSS-in-JS rule first, so it precedes the increments and
+  // is therefore applied once the replay reaches the final (counter=3) state.
+  if (injectStyle) await fixture.locator("#injectStyle").click();
   await fixture.locator("#name").fill("Ada Lovelace");
   for (let i = 0; i < 3; i++) await fixture.locator("#inc").click();
   await fixture.locator("#fetchBtn").click();
@@ -86,6 +89,29 @@ test("session replay plays back to the fixture's final state", async () => {
   await expect(replayFrame.locator("#counter")).toHaveText("3", { timeout: 20000 });
   // rrweb masks password inputs by default — the typed name is replayed, the secret never is
   await expect(replayFrame.locator("#name")).toHaveValue("Ada Lovelace");
+  await viewer.close();
+  await popup.close();
+});
+
+test("replay preserves runtime CSS-in-JS styling (insertRule from the page)", async () => {
+  // Regression guard: the recorder must run in the MAIN world to observe the
+  // page's own CSSStyleSheet.insertRule calls. From the isolated world those
+  // are invisible and the replayed element renders unstyled.
+  const { viewer, popup } = await recordSession({ injectStyle: true });
+
+  await viewer.locator("#replay .replayer-wrapper").waitFor();
+  await viewer.locator(".oj-controls button", { hasText: "8x" }).click();
+  await viewer.locator(".oj-controls button", { hasText: "Play" }).click();
+
+  const replayFrame = viewer.frameLocator("#replay .replayer-wrapper iframe");
+  // Reaching counter=3 means playback applied every earlier event, incl. the
+  // insertRule that styles #cssinjs.
+  await expect(replayFrame.locator("#counter")).toHaveText("3", { timeout: 20000 });
+  const bg = await replayFrame
+    .locator("#cssinjs")
+    .evaluate((el) => getComputedStyle(el).backgroundColor);
+  expect(bg).toBe("rgb(42, 161, 152)");
+
   await viewer.close();
   await popup.close();
 });
