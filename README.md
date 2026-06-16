@@ -53,6 +53,14 @@ OpenJam attaches the [Chrome DevTools Protocol](https://chromedevtools.github.io
 Every event is normalised to a wall-clock timestamp so the report renders one ordered,
 filterable timeline.
 
+### For AI agents
+
+Each report embeds a small `<script id="openjam-ai" type="application/json">` manifest
+*before* the full `<script id="openjam-data">` blob. Read the manifest first: it carries a
+`_doc` description, a per-kind `schema` legend, `counts`, and a `failures[]` index whose
+`i` fields point into the sorted `events[]` array in `#openjam-data`. Orient from the
+manifest, then extract only the events you need by index — no need to parse the whole blob.
+
 ## Install (unpacked)
 
 No build needed: download the pre-built zip from the
