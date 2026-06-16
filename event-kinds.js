@@ -20,5 +20,5 @@ export const LEGEND = {
   [KIND.CONSOLE]: "detail: message,stack; level: log|info|warning|error|debug",
   [KIND.ERROR]: "detail: message,url,line,column,stack",
   [KIND.LOG]: "detail: message,url,source",
-  [KIND.SCREENSHOT]: "title labels the moment; detail: dataUrl or error",
+  [KIND.SCREENSHOT]: "title labels the moment; detail: image (a data URL) or error",
 };

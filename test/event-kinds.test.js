@@ -18,4 +18,5 @@ test("LEGEND descriptions match their kind", () => {
   expect(LEGEND[KIND.NETWORK]).toContain("status");
   expect(LEGEND[KIND.ERROR]).toContain("stack");
   expect(LEGEND[KIND.CONSOLE]).toContain("level");
+  expect(LEGEND[KIND.SCREENSHOT]).toContain("image");
 });
