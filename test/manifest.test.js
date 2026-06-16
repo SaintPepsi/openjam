@@ -50,6 +50,8 @@ test("indexes HTTP failures with status and response body as message", () => {
 test("indexes network transport failures via errorText", () => {
   const m = buildManifest(report([{ t: 1, kind: "network", title: "FAILED /x", detail: { failed: true, errorText: "net::ERR_FAILED" } }]));
   expect(m.failures[0]).toMatchObject({ i: 0, kind: "network", message: "net::ERR_FAILED" });
+  // a transport failure has no HTTP status — don't carry a phantom `status` key
+  expect(m.failures[0]).not.toHaveProperty("status");
 });
 
 test("indexes thrown errors and console errors", () => {

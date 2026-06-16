@@ -45,7 +45,7 @@ export function buildManifest(report) {
     const rule = FAILURE_RULES.find((r) => r.match(e));
     if (rule) {
       const entry = { i, kind: e.kind, title: e.title };
-      if (e.kind === "network" && e.detail) entry.status = e.detail.status;
+      if (e.kind === "network" && typeof e.detail?.status === "number") entry.status = e.detail.status;
       const msg = rule.message(e);
       if (msg) entry.message = truncate(msg);
       failures.push(entry);

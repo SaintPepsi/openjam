@@ -13,7 +13,8 @@ import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { GROUND_TRUTH } from "./fixture-report.mjs";
 
-const TRIALS = Number(process.env.OPENJAM_EVAL_TRIALS || 3);
+const trialsEnv = Number(process.env.OPENJAM_EVAL_TRIALS);
+const TRIALS = Number.isInteger(trialsEnv) && trialsEnv > 0 ? trialsEnv : 3;
 const VARIANTS = ["with-manifest", "without-manifest"];
 const PROMPT = (file) =>
   `Read the OpenJam bug report at ${file}. Identify the single failing network request and explain the cause. ` +
