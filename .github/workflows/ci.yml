@@ -18,10 +18,10 @@ jobs:
           node-version: lts/*
       - uses: oven-sh/setup-bun@v2
       - run: npm ci
-      - run: npm run build
-      - run: npm test
+      # Browsers must be present before `npm test`, which builds, runs the bun
+      # unit suite, then the Playwright e2e suite.
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e
+      - run: npm test
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

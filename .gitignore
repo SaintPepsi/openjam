@@ -5,3 +5,4 @@ src/generated/
 .DS_Store
 openjam.zip
 test-results/
+eval/out/

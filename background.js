@@ -2,6 +2,8 @@
 // Attaches the Chrome DevTools Protocol to the active tab and records console
 // logs, network requests, JS errors and screenshots onto one wall-clock timeline.
 
+import { KIND } from "./event-kinds.js";
+
 const PROTOCOL_VERSION = "1.3";
 const BODY_CAPTURE_MAX_BYTES = 100 * 1024; // skip large/binary response bodies
 const SCREENSHOT_ON_ERROR_COOLDOWN_MS = 2000;
@@ -118,12 +120,12 @@ async function captureScreenshot(label) {
     const result = await sendCmd("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
     pushEvent({
       t: Date.now(),
-      kind: "screenshot",
+      kind: KIND.SCREENSHOT,
       title: label,
       detail: { image: "data:image/png;base64," + result.data },
     });
   } catch (err) {
-    pushEvent({ t: Date.now(), kind: "screenshot", title: label + " (failed)", detail: { error: String(err) } });
+    pushEvent({ t: Date.now(), kind: KIND.SCREENSHOT, title: label + " (failed)", detail: { error: String(err) } });
   }
 }
 
@@ -158,7 +160,7 @@ function onDebuggerEvent(source, method, params) {
       const req = params.request;
       const event = pushEvent({
         t,
-        kind: "network",
+        kind: KIND.NETWORK,
         title: req.method + " " + req.url,
         detail: {
           requestId: params.requestId,
@@ -216,7 +218,7 @@ function onDebuggerEvent(source, method, params) {
       const text = (params.args || []).map(formatRemoteObject).join(" ");
       pushEvent({
         t: params.timestamp || Date.now(),
-        kind: "console",
+        kind: KIND.CONSOLE,
         level: params.type, // log, info, warning, error, debug
         title: text,
         detail: { message: text, stack: formatStackTrace(params.stackTrace) },
@@ -229,7 +231,7 @@ function onDebuggerEvent(source, method, params) {
       const text = (d.exception && d.exception.description) || d.text || "Uncaught exception";
       pushEvent({
         t: params.timestamp || Date.now(),
-        kind: "error",
+        kind: KIND.ERROR,
         level: "error",
         title: text.split("\n")[0],
         detail: {
@@ -248,7 +250,7 @@ function onDebuggerEvent(source, method, params) {
       if (e.source === "network" || e.level === "verbose") break; // network errors already captured
       pushEvent({
         t: e.timestamp || Date.now(),
-        kind: "log",
+        kind: KIND.LOG,
         level: e.level,
         title: e.text,
         detail: { message: e.text, url: e.url, source: e.source },
@@ -284,7 +286,7 @@ async function startReplayRecorder(tabId) {
     } catch (err) {
       pushEvent({
         t: Date.now(),
-        kind: "log",
+        kind: KIND.LOG,
         level: "warning",
         title: "Session replay unavailable on this page",
         detail: { message: String(err) },
@@ -414,7 +416,7 @@ async function saveReport(key, report) {
       id: nextId(),
       t: Date.now(),
       rel: Date.now() - session.startWall,
-      kind: "log",
+      kind: KIND.LOG,
       level: "warning",
       title: "Session replay omitted: report exceeded storage quota",
       detail: { message: String(err) },
@@ -425,7 +427,7 @@ async function saveReport(key, report) {
     await chrome.storage.local.set({ [key]: report, lastReportKey: key });
   } catch {
     report.events = report.events.map((e) =>
-      e.kind === "screenshot" ? { ...e, detail: { note: "screenshot dropped (storage quota)" } } : e,
+      e.kind === KIND.SCREENSHOT ? { ...e, detail: { note: "screenshot dropped (storage quota)" } } : e,
     );
     await chrome.storage.local.set({ [key]: report, lastReportKey: key });
   }
