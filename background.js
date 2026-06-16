@@ -427,7 +427,7 @@ async function saveReport(key, report) {
     await chrome.storage.local.set({ [key]: report, lastReportKey: key });
   } catch {
     report.events = report.events.map((e) =>
-      e.kind === "screenshot" ? { ...e, detail: { note: "screenshot dropped (storage quota)" } } : e,
+      e.kind === KIND.SCREENSHOT ? { ...e, detail: { note: "screenshot dropped (storage quota)" } } : e,
     );
     await chrome.storage.local.set({ [key]: report, lastReportKey: key });
   }
