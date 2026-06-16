@@ -73,6 +73,31 @@ test("truncates failure messages to 500 chars + ellipsis", () => {
   expect(m.failures[0].message.endsWith("…")).toBe(true);
 });
 
+test("truncation never leaves a dangling surrogate at the boundary", () => {
+  // "a" + emoji shifts the 500-code-unit cut to land mid surrogate pair.
+  const msg = "a" + "😀".repeat(600);
+  const m = buildManifest(report([{ t: 1, kind: "error", title: "e", detail: { message: msg } }]));
+  const out = m.failures[0].message;
+  expect(out.endsWith("…")).toBe(true);
+  const before = out.slice(0, -1);
+  const lastCode = before.charCodeAt(before.length - 1);
+  expect(lastCode >= 0xd800 && lastCode <= 0xdbff).toBe(false); // no lone lead surrogate
+  expect(() => JSON.parse(JSON.stringify(m))).not.toThrow(); // still serialises cleanly
+});
+
+test("caps failures[] at 100 and reports the overflow via failuresOmitted", () => {
+  const events = Array.from({ length: 105 }, (_, i) => ({ t: i, kind: "error", title: "e" + i, detail: { message: "boom" + i } }));
+  const m = buildManifest(report(events));
+  expect(m.failures).toHaveLength(100);
+  expect(m.failuresOmitted).toBe(5);
+  expect(m.counts.error).toBe(105); // counts still reflect the true total
+});
+
+test("small reports report zero failuresOmitted", () => {
+  const m = buildManifest(report([{ t: 1, kind: "error", title: "e", detail: { message: "x" } }]));
+  expect(m.failuresOmitted).toBe(0);
+});
+
 test("tolerates a null report", () => {
   expect(() => buildManifest(null)).not.toThrow();
   expect(buildManifest(null).failures).toEqual([]);

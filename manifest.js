@@ -2,16 +2,23 @@
 // AI agents orient (#openjam-ai) without parsing the full #openjam-data blob.
 import { KINDS, LEGEND } from "./event-kinds.js";
 
+const MESSAGE_CAP = 500;
+const MAX_FAILURES = 100;
+
 const DOC =
   "OpenJam capture. events[] in #openjam-data is sorted ascending by t (epoch ms). " +
-  "Each event = {t,kind,title,detail}. Indices ('i') below point into that array. " +
+  "Each event = {t,kind,title,detail}. failures[] indices ('i') point into that array; " +
+  "at most " + MAX_FAILURES + " are listed and failuresOmitted counts any beyond that. " +
+  "counts['console.error'] is a subset of counts.console, not a separate kind. " +
   "Extract #openjam-data for full event detail.";
 
-const MESSAGE_CAP = 500;
-
 function truncate(s) {
-  if (typeof s !== "string") return s;
-  return s.length > MESSAGE_CAP ? s.slice(0, MESSAGE_CAP) + "…" : s;
+  if (typeof s !== "string" || s.length <= MESSAGE_CAP) return s;
+  let cut = s.slice(0, MESSAGE_CAP);
+  // Don't split a surrogate pair: drop a dangling lead surrogate at the boundary.
+  const last = cut.charCodeAt(cut.length - 1);
+  if (last >= 0xd800 && last <= 0xdbff) cut = cut.slice(0, -1);
+  return cut + "…";
 }
 
 // An event is a failure if a rule matches; `message` is the highest-signal text.
@@ -54,5 +61,10 @@ export function buildManifest(report) {
   // DERIVED sub-count of `console` (not an independent kind); don't double-count when summing `counts`.
   counts["console.error"] = consoleErrors;
 
-  return { _doc: DOC, schema: LEGEND, counts, failures };
+  // Cap the index so a pathological report can't bloat the "small" manifest;
+  // counts still reflect the true totals, and failuresOmitted flags the overflow.
+  const failuresOmitted = Math.max(0, failures.length - MAX_FAILURES);
+  const capped = failuresOmitted ? failures.slice(0, MAX_FAILURES) : failures;
+
+  return { _doc: DOC, schema: LEGEND, counts, failures: capped, failuresOmitted };
 }
