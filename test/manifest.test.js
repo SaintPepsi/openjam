@@ -35,3 +35,43 @@ test("tolerates a missing events array", () => {
   expect(() => buildManifest({})).not.toThrow();
   expect(buildManifest({}).failures).toEqual([]);
 });
+
+test("indexes HTTP failures with status and response body as message", () => {
+  const m = buildManifest(
+    report([
+      { t: 1, kind: "network", title: "GET /ok", detail: { status: 200 } },
+      { t: 2, kind: "network", title: "PATCH /diaries/5", detail: { status: 400, responseBody: "Cannot save changes for 2026-06-19" } },
+    ]),
+  );
+  expect(m.failures).toHaveLength(1);
+  expect(m.failures[0]).toMatchObject({ i: 1, kind: "network", status: 400, title: "PATCH /diaries/5", message: "Cannot save changes for 2026-06-19" });
+});
+
+test("indexes network transport failures via errorText", () => {
+  const m = buildManifest(report([{ t: 1, kind: "network", title: "FAILED /x", detail: { failed: true, errorText: "net::ERR_FAILED" } }]));
+  expect(m.failures[0]).toMatchObject({ i: 0, kind: "network", message: "net::ERR_FAILED" });
+});
+
+test("indexes thrown errors and console errors", () => {
+  const m = buildManifest(
+    report([
+      { t: 1, kind: "error", title: "TypeError: x", detail: { message: "TypeError: x is not a function" } },
+      { t: 2, kind: "console", level: "error", title: "bad", detail: { message: "bad thing" } },
+    ]),
+  );
+  expect(m.failures.map((f) => f.i)).toEqual([0, 1]);
+  expect(m.failures[0].message).toBe("TypeError: x is not a function");
+  expect(m.failures[1].message).toBe("bad thing");
+});
+
+test("truncates failure messages to 500 chars + ellipsis", () => {
+  const long = "x".repeat(600);
+  const m = buildManifest(report([{ t: 1, kind: "error", title: "e", detail: { message: long } }]));
+  expect(m.failures[0].message.length).toBe(501); // 500 + "…"
+  expect(m.failures[0].message.endsWith("…")).toBe(true);
+});
+
+test("tolerates a null report", () => {
+  expect(() => buildManifest(null)).not.toThrow();
+  expect(buildManifest(null).failures).toEqual([]);
+});
