@@ -8,11 +8,18 @@
 // the in-extension viewer must use external scripts — see viewer.js.
 
 import { renderReport, mountReplay, REPORT_CSS, REPLAY_CSS } from "./renderer.js";
+import { buildManifest } from "./manifest.js";
 
 export function buildReportHTML(report, replayAssets) {
   const meta = report.meta || {};
   // Escape "<" so the embedded JSON can never break out of the <script> tag.
   const dataJson = JSON.stringify(report).replace(/</g, "\\u003c");
+  let manifestJson = "{}";
+  try {
+    manifestJson = JSON.stringify(buildManifest(report)).replace(/</g, "\\u003c");
+  } catch (err) {
+    manifestJson = JSON.stringify({ _doc: "manifest unavailable", error: String(err) }).replace(/</g, "\\u003c");
+  }
   const title = (meta.pageTitle || meta.pageUrl || "capture").replace(/[<>]/g, "");
   const hasReplay = !!(replayAssets && report.rrwebEvents && report.rrwebEvents.length > 1);
   // The engine is executable JS, not JSON — neutralise any </script> inside it.
@@ -30,6 +37,7 @@ ${hasReplay ? `<style>${REPLAY_CSS}</style>\n<style>${replayAssets.ENGINE_CSS}</
 <body>
 ${hasReplay ? `<div id="replay-section"><h2>Session replay</h2><div id="replay"></div></div>` : ""}
 <div id="app"></div>
+<script id="openjam-ai" type="application/json">${manifestJson}</script>
 <script id="openjam-data" type="application/json">${dataJson}</script>
 ${
   hasReplay

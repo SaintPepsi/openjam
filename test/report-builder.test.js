@@ -48,9 +48,27 @@ test("hostile '<' content inflates boundedly (6 bytes per '<', not exponential)"
   expect(inflated - base).toBeLessThan(1000 * 6 + 200);
   // and the breakout is actually neutralised
   const html = buildReportHTML(makeReport(2, { title: "</script><script>alert(1)</script>" }), replayAssets);
-  const dataBlock = html.match(/type="application\/json">([\s\S]*?)<\/script>/)[1];
+  const dataBlock = html.match(/id="openjam-data" type="application\/json">([\s\S]*?)<\/script>/)[1];
   expect(dataBlock).not.toContain("</script>");
   expect(JSON.parse(dataBlock).events[0].title).toContain("</script>"); // survives round-trip
+});
+
+test("export embeds an #openjam-ai manifest before #openjam-data", () => {
+  const html = buildReportHTML(makeReport(0), null);
+  expect(html.indexOf('id="openjam-ai"')).toBeGreaterThan(-1);
+  // manifest comes before the full data blob
+  expect(html.indexOf('id="openjam-ai"')).toBeLessThan(html.indexOf('id="openjam-data"'));
+  const block = html.match(/id="openjam-ai" type="application\/json">([\s\S]*?)<\/script>/)[1];
+  const manifest = JSON.parse(block);
+  expect(typeof manifest._doc).toBe("string");
+  expect(manifest.schema).toBeDefined();
+  expect(manifest.counts.console).toBe(1); // makeReport() emits one console event
+});
+
+test("#openjam-data block is unchanged (still parseable, full events)", () => {
+  const html = buildReportHTML(makeReport(0), null);
+  const data = html.match(/id="openjam-data" type="application\/json">([\s\S]*?)<\/script>/)[1];
+  expect(JSON.parse(data).events).toHaveLength(1);
 });
 
 test("no-replay export carries zero player overhead", () => {
