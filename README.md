@@ -1,6 +1,6 @@
 # 🍓🫐🍇🍒 OpenJam
 
-[![100% AI generated](https://img.shields.io/badge/100%25_AI_generated-Fable_5-d97757?logo=claude&logoColor=white)](https://claude.com/claude-code)
+[![100% AI generated](https://img.shields.io/badge/100%25_AI_generated-Fable_5/Opus_4.8-d97757?logo=claude&logoColor=white)](https://claude.com/claude-code)
 
 An open-source take on [Jam.dev](https://jam.dev): a Chrome extension that captures
 **console logs, network requests, JS errors, screenshots, device/environment info, and a
