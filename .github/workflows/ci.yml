@@ -17,8 +17,9 @@ jobs:
     container: mcr.microsoft.com/playwright:v1.60.0-jammy
     steps:
       - uses: actions/checkout@v5
-      # The Playwright image ships without unzip, which setup-bun needs.
-      - run: apt-get update && apt-get install -y --no-install-recommends unzip
+      # The Playwright image ships without unzip (setup-bun needs it) or zip
+      # (the package step needs it).
+      - run: apt-get update && apt-get install -y --no-install-recommends unzip zip
       - uses: oven-sh/setup-bun@v2
       - run: npm ci
       # `npm test` builds, runs the bun unit suite, then the Playwright e2e
