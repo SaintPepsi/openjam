@@ -116,7 +116,9 @@ until you run `npm run build` once.
 
 **Testing:** `npm test` runs the [Bun](https://bun.sh) unit suite in `test/` — recorder
 buffer drainage, orphaned-recorder stop, session isolation, storage-quota degradation,
-export size/escaping bounds, issue-link prefills. `npm run test:e2e` runs the
+export size/escaping bounds, issue-link prefills, the non-recordable-tab guard, and
+packaging completeness (`packaging.test.js` walks the manifest/import graph and fails if
+the release zip would omit a file an extension page imports). `npm run test:e2e` runs the
 [Playwright](https://playwright.dev/docs/chrome-extensions) end-to-end suite in `e2e/`
 (`npx playwright install chromium` once): it loads the real unpacked extension headless,
 records the deterministic fixture (`test/e2e/fixture.html`), and asserts console/network/
@@ -125,6 +127,14 @@ screenshot rows land on the timeline, the replay plays back to the fixture's fin
 pages fail with a reportable error, and storage keeps only the newest report. Shared
 driving helpers live in `test/e2e/harness.mjs` — the screenshot generator uses the same
 ones.
+
+**Visual regression:** the e2e suite also pins `toHaveScreenshot` baselines (e.g. the
+popup error callout). Text renders differently across OSes, so baselines are generated
+*and* compared in one pinned image (`mcr.microsoft.com/playwright:v1.60.0-jammy`): CI runs
+the whole job in that image, and comparison is skipped on local macOS (`ignoreSnapshots`
+when `CI` is unset, so `npm test` won't fail on Linux baselines). Regenerate baselines
+with `npm run test:snapshots`, which runs that image via Docker (your host `node_modules`
+is left untouched).
 
 ## Files
 
@@ -158,7 +168,7 @@ driven by OpenJam's own controller (`mountReplay` in `renderer.js`). We don't us
 (verified across the 2.0.0/2.0.1 UMD and ESM artifacts — the player shell mounts but no
 replay iframe is ever created), and `build.mjs` bundles the engine directly instead.
 
-## Known limitations (v0.2.0 — MVP, see plans/MVP_PLAN.md for the cut list)
+## Known limitations (MVP — see plans/MVP_PLAN.md for the cut list)
 
 - Console/network history before **Start** is not captured — recording is forward-only.
 - Response bodies are captured only for text-like types under 100 KB (configurable via `BODY_CAPTURE_MAX_BYTES` in `background.js`).
