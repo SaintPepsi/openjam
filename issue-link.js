@@ -40,7 +40,8 @@ export function issueURL(error, { version, userAgent }) {
 export function renderErrorReport(container, error, env) {
   container.textContent = "";
   const msg = document.createElement("div");
-  msg.textContent = String(error);
+  msg.className = "oj-error"; // red callout so a failure reads as an error, not a hint
+  msg.textContent = "⛔ " + String(error);
   const link = document.createElement("a");
   link.href = issueURL(error, env);
   link.target = "_blank";

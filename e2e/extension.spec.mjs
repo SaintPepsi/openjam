@@ -174,6 +174,8 @@ test("restricted pages fail with a reportable error", async () => {
     /github\.com\/SaintPepsi\/openjam\/issues\/new/,
   );
   await expect(popup.locator(".pii-warning")).toContainText("remove any PII");
+  // The failure renders as a red error callout, not gray hint text.
+  await expect(popup.locator(".oj-error")).toBeVisible();
   await restricted.close();
   await popup.close();
 });
