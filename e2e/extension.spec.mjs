@@ -156,7 +156,9 @@ test("restricted pages fail with a reportable error", async () => {
 
   const res = await sendAction(popup, { action: "start" });
   expect(res.ok).toBe(false);
-  expect(res.error).toContain("chrome://");
+  // The guard screens the page out before attaching, so the user gets actionable
+  // advice rather than a raw CDP error like "Cannot access a chrome:// URL".
+  expect(res.error).toContain("only record normal web pages");
 
   // The popup's failure branch (popup.js toggle handler) renders the error
   // with a GitHub issue link and the PII warning.

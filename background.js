@@ -313,8 +313,27 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 // ---- lifecycle ------------------------------------------------------------
 
+// chrome.debugger only attaches to ordinary web pages. Browser UI (chrome://),
+// the Web Store, and other extensions' pages (chrome-extension://) reject the
+// attach with an opaque CDP error — e.g. "Cannot access a chrome-extension://
+// URL of different extension" — so screen them out first with advice the user
+// can act on. host_permissions (<all_urls>) leave tab.url undefined for pages
+// we can't read, which are exactly the ones we can't record.
+async function recordableTabError(tabId) {
+  let url;
+  try {
+    ({ url } = await chrome.tabs.get(tabId));
+  } catch {
+    return "Couldn't find the tab to record. Open the page you want to capture and try again.";
+  }
+  if (url && /^(https?|file):/.test(url)) return null;
+  return "OpenJam can only record normal web pages, not browser or extension pages. Switch to the tab you want to record, then press Start.";
+}
+
 async function startRecording(tabId) {
   if (session.recording) return { ok: false, error: "Already recording." };
+  const guard = await recordableTabError(tabId);
+  if (guard) return { ok: false, error: guard };
   Object.assign(session, {
     recording: true,
     stopping: false,
