@@ -22,6 +22,15 @@ jobs:
       # unit suite, then the Playwright e2e suite.
       - run: npx playwright install --with-deps chromium
       - run: npm test
+      # Build the installable zip and attach it to the run so reviewers can
+      # download and load it (Checks tab -> this run -> Artifacts) instead of
+      # pulling the branch. GitHub re-wraps it, so the download is a zip that
+      # contains openjam.zip; expires after the retention window.
+      - run: npm run package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openjam-extension-${{ github.sha }}
+          path: openjam.zip
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
