@@ -389,6 +389,38 @@ async function stopRecording() {
     // already detached — fine.
   }
 
+  return finalizeRecording();
+}
+
+// The debugger can detach without us asking: the user clicks "Cancel" on
+// Chrome's "being debugged" banner, or the recorded tab closes. CDP is already
+// gone (so we can't screenshot or detach), but every event captured so far is
+// still in the session — salvage it into a report instead of throwing the whole
+// recording away (#19). The stopping flag dedupes against a racing stop click or
+// a second detach/remove event for the same teardown.
+async function salvageRecording(note) {
+  if (!session.recording || session.stopping) return;
+  session.stopping = true;
+  try {
+    await chrome.tabs.sendMessage(session.tabId, { action: "oj-rrweb-stop" });
+  } catch {
+    // recorder absent or tab already gone — nothing left to stop.
+  }
+  // Keep recording=true across the grace window so the recorder's final batch is
+  // still accepted, then close the session and persist what we have.
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  session.recording = false;
+  await finalizeRecording({ note });
+}
+
+// Build the report from the current session and open the viewer. Shared by the
+// clean stop path and the salvage path, so an interrupted capture follows the
+// exact same persistence (incl. the storage-quota degradation in saveReport).
+async function finalizeRecording({ note } = {}) {
+  if (note) {
+    pushEvent({ t: Date.now(), kind: KIND.LOG, level: "warning", title: note, detail: { message: note } });
+  }
+
   const report = {
     meta: {
       version: chrome.runtime.getManifest().version,
@@ -452,19 +484,23 @@ async function saveReport(key, report) {
   }
 }
 
-// If the debugged tab closes or the user detaches via the banner, stop cleanly —
-// including the rrweb recorder, which otherwise keeps serializing the page.
-chrome.debugger.onDetach.addListener((source) => {
-  if (session.recording && source.tabId === session.tabId) {
-    session.recording = false;
-    chrome.tabs.sendMessage(source.tabId, { action: "oj-rrweb-stop" }).catch(() => {});
-  }
+// The user detached via the banner (Cancel), or DevTools grabbed the tab: don't
+// lose the capture — salvage it. CDP is already gone here.
+chrome.debugger.onDetach.addListener((source, reason) => {
+  if (source.tabId !== session.tabId) return;
+  const why =
+    reason === "canceled_by_user"
+      ? "debugging was cancelled from the browser banner"
+      : reason === "target_closed"
+        ? "the recorded tab was closed"
+        : "the debugger detached" + (reason ? " (" + reason + ")" : "");
+  salvageRecording("Recording ended early: " + why + ". Saved everything captured up to this point.").catch(() => {});
 });
 
+// The recorded tab closed: salvage whatever was captured before it went away.
 chrome.tabs.onRemoved.addListener((tabId) => {
-  if (session.recording && tabId === session.tabId) {
-    session.recording = false;
-  }
+  if (tabId !== session.tabId) return;
+  salvageRecording("Recording ended early: the recorded tab was closed. Saved everything captured up to this point.").catch(() => {});
 });
 
 chrome.debugger.onEvent.addListener(onDebuggerEvent);

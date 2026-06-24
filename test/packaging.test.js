@@ -98,3 +98,9 @@ test("guard actually reaches the modules that broke v0.4.0", () => {
   expect(required.has("event-kinds.js")).toBe(true); // via background.js
   expect(required.has("manifest.js")).toBe(true); // via viewer.html → report-builder.js
 });
+
+test("manifest description fits the Chrome Web Store limit (132 chars)", () => {
+  // CWS rejects the upload outright if description > 132 — caught only at submit
+  // time otherwise (the v0.4.1 description was 146 and blocked the first listing).
+  expect(manifest.description.length).toBeLessThanOrEqual(132);
+});
