@@ -1,6 +1,6 @@
 {
   "name": "openjam",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
   "type": "module",
   "description": "Open-source jam.dev alternative: Chrome MV3 extension capturing console/network/errors/screenshots/device + rrweb session replay on one timeline, exported as a self-contained HTML bug report.",
@@ -9,10 +9,11 @@
     "test": "npm run build && bun test test/ && playwright test",
     "test:unit": "bun test test/",
     "test:e2e": "playwright test",
+    "test:snapshots": "docker run --rm -e CI=1 -e HOME=/tmp -v \"$PWD\":/work -v /work/node_modules -w /work mcr.microsoft.com/playwright:v1.60.0-jammy bash -lc 'npm ci && npm run build && npx playwright test --update-snapshots'",
     "eval": "node eval/build-reports.mjs && node eval/run-eval.mjs",
     "screenshots": "node scripts/screenshots.mjs",
     "icons": "node scripts/icons.mjs",
-    "package": "npm run build && zip -r openjam.zip manifest.json LICENSE background.js issue-link.js popup.html popup.js viewer.html viewer.js renderer.js report-builder.js icons dist src/generated"
+    "package": "npm run build && zip -r openjam.zip manifest.json LICENSE background.js event-kinds.js manifest.js issue-link.js popup.html popup.js viewer.html viewer.js renderer.js report-builder.js icons dist src/generated"
   },
   "repository": {
     "type": "git",

@@ -156,7 +156,9 @@ test("restricted pages fail with a reportable error", async () => {
 
   const res = await sendAction(popup, { action: "start" });
   expect(res.ok).toBe(false);
-  expect(res.error).toContain("chrome://");
+  // The guard screens the page out before attaching, so the user gets actionable
+  // advice rather than a raw CDP error like "Cannot access a chrome:// URL".
+  expect(res.error).toContain("only record normal web pages");
 
   // The popup's failure branch (popup.js toggle handler) renders the error
   // with a GitHub issue link and the PII warning.
@@ -172,6 +174,11 @@ test("restricted pages fail with a reportable error", async () => {
     /github\.com\/SaintPepsi\/openjam\/issues\/new/,
   );
   await expect(popup.locator(".pii-warning")).toContainText("remove any PII");
+  // The failure renders as a red error callout, not gray hint text. Visual
+  // baseline of the whole hint region (error box + report link + PII warning);
+  // its text is static, so the snapshot is deterministic across runs.
+  await expect(popup.locator(".oj-error")).toBeVisible();
+  await expect(popup.locator("#hint")).toHaveScreenshot("popup-error-callout.png");
   await restricted.close();
   await popup.close();
 });

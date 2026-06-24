@@ -6,6 +6,7 @@
 import { test, expect } from "bun:test";
 
 const store = {};
+const tabUrlById = {}; // per-test overrides for chrome.tabs.get(id).url
 let storageSetFailures = 0;
 const createdTabs = [];
 const tabMessages = [];
@@ -41,6 +42,7 @@ globalThis.chrome = {
   },
   tabs: {
     query: async () => [{ id: 1 }],
+    get: async (id) => ({ id, url: tabUrlById[id] ?? "https://example.test/app" }),
     sendMessage: async (tabId, msg) => {
       tabMessages.push({ tabId, msg });
       return { ok: true };
@@ -177,4 +179,17 @@ test("concurrent stop clicks produce one report and one viewer tab", async () =>
   const [r1, r2] = await Promise.all([dispatch({ action: "stop" }), dispatch({ action: "stop" })]);
   expect([r1.ok, r2.ok].sort()).toEqual([false, true]);
   expect(createdTabs.length).toBe(1);
+});
+
+test("refuses non-recordable tabs with actionable advice, not a raw CDP error", async () => {
+  // chrome.debugger can't attach to another extension's page; without the guard
+  // the worker leaks Chrome's "Cannot access a chrome-extension:// URL of
+  // different extension" error and never records.
+  tabUrlById[7] = "chrome-extension://aaaabbbbccccdddd/options.html";
+  const res = await dispatch({ action: "start", tabId: 7 });
+  expect(res.ok).toBe(false);
+  expect(res.error).toMatch(/only record normal web pages/);
+  expect(res.error).not.toMatch(/debugger|chrome-extension/);
+  expect((await dispatch({ action: "getStatus" })).recording).toBe(false);
+  delete tabUrlById[7];
 });
