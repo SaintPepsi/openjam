@@ -9,6 +9,7 @@
     "test": "npm run build && bun test test/ && playwright test",
     "test:unit": "bun test test/",
     "test:e2e": "playwright test",
+    "test:snapshots": "docker run --rm -e CI=1 -e HOME=/tmp -v \"$PWD\":/work -v /work/node_modules -w /work mcr.microsoft.com/playwright:v1.60.0-jammy bash -lc 'npm ci && npm run build && npx playwright test --update-snapshots'",
     "eval": "node eval/build-reports.mjs && node eval/run-eval.mjs",
     "screenshots": "node scripts/screenshots.mjs",
     "icons": "node scripts/icons.mjs",

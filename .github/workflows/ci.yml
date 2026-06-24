@@ -11,16 +11,16 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # Run in the pinned Playwright image (browsers preinstalled). toHaveScreenshot
+    # baselines are Linux-rendered in this exact image (npm run test:snapshots),
+    # so comparing here is deterministic — no cross-OS font-rendering flake.
+    container: mcr.microsoft.com/playwright:v1.60.0-jammy
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: lts/*
       - uses: oven-sh/setup-bun@v2
       - run: npm ci
-      # Browsers must be present before `npm test`, which builds, runs the bun
-      # unit suite, then the Playwright e2e suite.
-      - run: npx playwright install --with-deps chromium
+      # `npm test` builds, runs the bun unit suite, then the Playwright e2e
+      # suite. CI=true (set by Actions) enables snapshot comparison.
       - run: npm test
       # Build the installable zip and attach it to the run so reviewers can
       # download and load it (Checks tab -> this run -> Artifacts) instead of
