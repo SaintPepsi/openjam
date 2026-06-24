@@ -112,12 +112,24 @@ test("batches after recording ends are refused (orphaned-recorder guard)", async
   expect(await batch(1, makeEvents(5))).toEqual({ stop: true });
 });
 
-test("debugger detach (banner dismissed) tells the recorder to stop", async () => {
+test("cancelling the debug banner salvages the recording instead of losing it (#19)", async () => {
   expect((await dispatch({ action: "start" })).ok).toBe(true);
+  await batch(1, makeEvents(4)); // events captured before the user hits Cancel
   tabMessages.length = 0;
-  for (const fn of debuggerDetachListeners) fn({ tabId: 1 });
-  expect(tabMessages.some((m) => m.msg.action === "oj-rrweb-stop")).toBe(true);
-  expect(await batch(1, makeEvents(1))).toEqual({ stop: true });
+  createdTabs.length = 0;
+
+  // User clicks "Cancel" on Chrome's "being debugged" banner → CDP detaches.
+  for (const fn of debuggerDetachListeners) fn({ tabId: 1 }, "canceled_by_user");
+  await new Promise((r) => setTimeout(r, 600)); // salvage grace window + save
+
+  expect(tabMessages.some((m) => m.msg.action === "oj-rrweb-stop")).toBe(true); // orphaned recorder told to stop
+  const report = store[store.lastReportKey];
+  expect(report).toBeDefined();
+  expect(report.rrwebEvents.length).toBe(4); // nothing lost
+  expect(createdTabs.length).toBe(1); // report opened for the user
+  expect(report.events.some((e) => /cancelled from the browser banner/i.test(e.title))).toBe(true);
+  expect((await dispatch({ action: "getStatus" })).recording).toBe(false);
+  expect(await batch(1, makeEvents(1))).toEqual({ stop: true }); // post-salvage batches refused
 });
 
 test("sessions don't leak into each other, and stale reports are pruned from storage", async () => {
