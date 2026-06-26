@@ -2,6 +2,8 @@
 
 [![100% AI generated](https://img.shields.io/badge/100%25_AI_generated-Fable_5/Opus_4.8-d97757?logo=claude&logoColor=white)](https://claude.com/claude-code)
 
+> 🔒 **Nothing is ever uploaded — you have full control over your data.** Everything stays on your machine; the entire bug report is a single local file that only travels if *you* choose to share it. It's a digital-ownership ethos we share with [FULU](https://www.fulu.org/).
+
 An open-source take on [Jam.dev](https://jam.dev): a Chrome extension that captures
 **console logs, network requests, JS errors, screenshots, device/environment info, and a
 full DOM session replay** ([rrweb](https://github.com/rrweb-io/rrweb)) onto a single
@@ -10,6 +12,10 @@ and watch the session play back.
 
 No backend, no account, no telemetry. Everything stays on your machine
 ([privacy policy](PRIVACY.md)).
+
+Curious exactly what OpenJam captures and how it behaves? The
+[feature set](docs/feature-set/README.md) documents each feature for transparency —
+what it does, what to expect, and the test data behind it.
 
 ![Report viewer: session replay + timeline](docs/screenshots/viewer.png)
 
@@ -60,6 +66,13 @@ Each report embeds a small `<script id="openjam-ai" type="application/json">` ma
 `_doc` description, a per-kind `schema` legend, `counts`, and a `failures[]` index whose
 `i` fields point into the sorted `events[]` array in `#openjam-data`. Orient from the
 manifest, then extract only the events you need by index — no need to parse the whole blob.
+
+## Install
+
+[**Add OpenJam from the Chrome Web Store**](https://chromewebstore.google.com/detail/openjam/oljdbmjhfjnhnpjcehcnkbbjdgnpjdaj)
+— one click, auto-updates. Works in Chrome and other Chromium browsers.
+
+Prefer to load it yourself, or on a browser without the store? See **Install (unpacked)** below.
 
 ## Install (unpacked)
 
