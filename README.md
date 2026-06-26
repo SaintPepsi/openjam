@@ -67,6 +67,13 @@ Each report embeds a small `<script id="openjam-ai" type="application/json">` ma
 `i` fields point into the sorted `events[]` array in `#openjam-data`. Orient from the
 manifest, then extract only the events you need by index — no need to parse the whole blob.
 
+## Install
+
+[**Add OpenJam from the Chrome Web Store**](https://chromewebstore.google.com/detail/openjam/oljdbmjhfjnhnpjcehcnkbbjdgnpjdaj)
+— one click, auto-updates. Works in Chrome and other Chromium browsers.
+
+Prefer to load it yourself, or on a browser without the store? See **Install (unpacked)** below.
+
 ## Install (unpacked)
 
 No build needed: download the pre-built zip from the
