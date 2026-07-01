@@ -18,7 +18,15 @@ export async function launchExtension({ headful = !!process.env.HEADFUL } = {}) 
     channel: "chromium",
     headless: !headful,
     viewport: { width: 1280, height: 800 },
-    args: [`--disable-extensions-except=${ROOT}`, `--load-extension=${ROOT}`],
+    args: [
+      `--disable-extensions-except=${ROOT}`,
+      `--load-extension=${ROOT}`,
+      // Give headless Chromium a synthetic microphone and auto-accept the
+      // getUserMedia permission prompt, so the audio-capture e2e can grant and
+      // record without a real device or a manual click.
+      "--use-fake-device-for-media-stream",
+      "--use-fake-ui-for-media-stream",
+    ],
   });
   const sw = context.serviceWorkers()[0] ?? (await context.waitForEvent("serviceworker"));
   return { context, extensionId: new URL(sw.url()).host };
