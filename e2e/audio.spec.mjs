@@ -215,6 +215,18 @@ test("[disconfirming] export from a null-audio report has no audio section or da
   expect(html.match(/data:audio\/webm/g)).toBeNull();
 });
 
+test("with a replay, there is no standalone audio player — the replayer drives the audio", () => {
+  // One-player invariant: when a report has a replay, narration is driven by the
+  // replayer (play/pause/seek/speed move both), so no separate #audio-section.
+  const replayReport = { ...AUDIO_REPORT, rrwebEvents: [{ type: 4, timestamp: 1 }, { type: 3, timestamp: 2 }] };
+  const stubAssets = { ENGINE_IIFE: "window.RRWebReplayer=function(){};", ENGINE_CSS: "" };
+  const html = buildReportHTML(replayReport, stubAssets);
+  expect(html).toContain('id="replay-section"');
+  expect(html).not.toContain('id="audio-section"');
+  // The webm data URL is still inlined once (in the report JSON the replayer reads).
+  expect(html.match(/data:audio\/webm/g)).toHaveLength(1);
+});
+
 test("export renders a runtime <audio src=data:audio/webm> element in a browser", async () => {
   // The true export shape: opened in a browser, mountAudio must create exactly
   // one <audio> element sourced from the webm data URL. Rendered from a fixed

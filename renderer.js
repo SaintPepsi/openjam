@@ -108,6 +108,43 @@ export function mountReplay(container, report, ReplayerCtor) {
   var finished = false;
   var rafId = null;
 
+  // Narration audio is driven entirely by the replay clock — there is no separate
+  // audio player. Its position/rate follow the replayer, so play / pause / seek /
+  // speed move both together. Both clocks are Date.now epoch ms: the replay offset
+  // maps to a wall time (rrwebStart + getCurrentTime), and the audio position is
+  // that wall minus the audio's own start, clamped to the track.
+  var audio = null;
+  var replayStart = (events[0] && events[0].timestamp) || 0;
+  var audioStart = report.audio ? report.audio.startWall : 0;
+  var audioDur = report.audio ? report.audio.durationMs : 0;
+  if (report.audio && report.audio.dataUrl) {
+    audio = document.createElement("audio");
+    audio.src = report.audio.dataUrl;
+    audio.preload = "auto";
+    audio.style.display = "none";
+    player.appendChild(audio);
+  }
+  function syncAudio() {
+    if (!audio) return;
+    var offsetMs = replayStart + Math.min(replayer.getCurrentTime(), total) - audioStart;
+    if (!playing || offsetMs < 0 || offsetMs > audioDur) {
+      if (!audio.paused) audio.pause(); // outside the narration window (or paused)
+      return;
+    }
+    var want = offsetMs / 1000;
+    if (Math.abs(audio.currentTime - want) > 0.3) { try { audio.currentTime = want; } catch (e) {} }
+    if (audio.paused) audio.play().catch(function () {});
+  }
+  function highlightRow(wall) {
+    var rows = document.querySelectorAll("#app .timeline .row");
+    var pick = null;
+    for (var i = 0; i < rows.length; i++) {
+      if (Number(rows[i].dataset.t) <= wall) pick = rows[i]; else break;
+    }
+    for (var j = 0; j < rows.length; j++) rows[j].classList.remove("oj-audio-active");
+    if (pick) pick.classList.add("oj-audio-active");
+  }
+
   // Scale the recorded viewport to fit the stage width.
   var stageW = Math.min(player.clientWidth || 1024, 1024);
   var scale = Math.min(1, stageW / pageW);
@@ -119,12 +156,15 @@ export function mountReplay(container, report, ReplayerCtor) {
     var t = Math.min(replayer.getCurrentTime(), total);
     fill.style.width = (total ? (t / total) * 100 : 0) + "%";
     time.textContent = fmt(t) + " / " + fmt(total);
+    highlightRow(replayStart + t);
+    syncAudio();
     if (playing) rafId = requestAnimationFrame(paint);
   }
   function setPlaying(on) {
     playing = on;
     playBtn.textContent = on ? "❚❚ Pause" : finished ? "↺ Replay" : "▶ Play";
     if (rafId) cancelAnimationFrame(rafId);
+    if (audio && !on) audio.pause();
     if (on) rafId = requestAnimationFrame(paint);
   }
 
@@ -156,6 +196,7 @@ export function mountReplay(container, report, ReplayerCtor) {
       btn.classList.add("oj-on");
       var t = replayer.getCurrentTime();
       replayer.setConfig({ speed: speed });
+      if (audio) audio.playbackRate = speed;
       if (playing) replayer.play(t);
     });
     controls.appendChild(btn);
