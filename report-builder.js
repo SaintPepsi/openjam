@@ -7,7 +7,7 @@
 // Inline scripts are allowed here because the file opens as file:// (no CSP);
 // the in-extension viewer must use external scripts — see viewer.js.
 
-import { renderReport, mountReplay, REPORT_CSS, REPLAY_CSS } from "./renderer.js";
+import { renderReport, mountReplay, mountAudio, REPORT_CSS, REPLAY_CSS } from "./renderer.js";
 import { buildManifest } from "./manifest.js";
 
 export function buildReportHTML(report, replayAssets) {
@@ -22,6 +22,7 @@ export function buildReportHTML(report, replayAssets) {
   }
   const title = (meta.pageTitle || meta.pageUrl || "capture").replace(/[<>]/g, "");
   const hasReplay = !!(replayAssets && report.rrwebEvents && report.rrwebEvents.length > 1);
+  const hasAudio = !!(report.audio && report.audio.dataUrl);
   // The engine is executable JS, not JSON — neutralise any </script> inside it.
   const engineJs = hasReplay ? replayAssets.ENGINE_IIFE.replace(/<\/script/gi, "<\\/script") : "";
 
@@ -36,6 +37,7 @@ ${hasReplay ? `<style>${REPLAY_CSS}</style>\n<style>${replayAssets.ENGINE_CSS}</
 </head>
 <body>
 ${hasReplay ? `<div id="replay-section"><h2>Session replay</h2><div id="replay"></div></div>` : ""}
+${hasAudio ? `<div id="audio-section"><h2>Narration</h2><div id="audio"></div></div>` : ""}
 <div id="app"></div>
 <script id="openjam-ai" type="application/json">${manifestJson}</script>
 <script id="openjam-data" type="application/json">${dataJson}</script>
@@ -58,6 +60,11 @@ try {
 ${renderReport.toString()}
 renderReport(document.getElementById("app"), JSON.parse(document.getElementById("openjam-data").textContent));
 </script>
+${hasAudio ? `<script>
+${mountAudio.toString()}
+try { mountAudio(document.getElementById("audio"), JSON.parse(document.getElementById("openjam-data").textContent)); }
+catch (err) { var s = document.getElementById("audio-section"); if (s) s.hidden = true; console.error("audio mount failed", err); }
+</script>` : ""}
 </body>
 </html>`;
 }

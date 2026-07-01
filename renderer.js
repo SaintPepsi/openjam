@@ -35,6 +35,7 @@ details.device summary{padding:10px 22px;cursor:pointer;color:var(--muted);user-
 .b-screenshot{background:#1f3a2a;color:var(--green)}
 .summary{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px}
 .row.lvl-error .summary,.row.lvl-warning .summary{white-space:normal}
+.row.oj-audio-active{background:#1d2b45;box-shadow:inset 3px 0 0 #6ea8fe}
 .lvl-error .summary{color:var(--red)}
 .lvl-warning .summary{color:var(--orange)}
 .status{font-weight:700}
@@ -168,6 +169,29 @@ export function mountReplay(container, report, ReplayerCtor) {
   replayer.pause(0); // render the first frame without starting playback
   paint();
   return replayer;
+}
+
+// Self-contained (embedded via toString in the export). Plays the narration and,
+// on each timeupdate, highlights the timeline row nearest the current wall time.
+export function mountAudio(container, report) {
+  if (!report.audio || !report.audio.dataUrl) return;
+  var startWall = report.audio.startWall;
+  var audio = document.createElement("audio");
+  audio.controls = true;
+  audio.src = report.audio.dataUrl;
+  audio.style.width = "100%";
+  container.appendChild(audio);
+
+  audio.addEventListener("timeupdate", function () {
+    var wall = startWall + audio.currentTime * 1000;
+    var rows = document.querySelectorAll("#app .timeline .row");
+    var pick = null;
+    for (var i = 0; i < rows.length; i++) {
+      if (Number(rows[i].dataset.t) <= wall) pick = rows[i]; else break;
+    }
+    for (var j = 0; j < rows.length; j++) rows[j].classList.remove("oj-audio-active");
+    if (pick) { pick.classList.add("oj-audio-active"); pick.scrollIntoView({ block: "nearest" }); }
+  });
 }
 
 export function renderReport(container, report) {
@@ -340,6 +364,7 @@ export function renderReport(container, report) {
       if (!matches(ev)) return;
       shown++;
       var row = el("div", "row " + (ev.level ? "lvl-" + ev.level : ""));
+      row.dataset.t = String(ev.t);
       row.appendChild(el("div", "time", relTime(ev.rel != null ? ev.rel : ev.t - (meta.capturedAt || 0))));
       row.appendChild(el("div", "badge b-" + ev.kind, ev.kind));
       row.appendChild(buildSummary(ev));

@@ -85,6 +85,15 @@ test("#openjam-data block is unchanged (still parseable, full events)", () => {
   expect(JSON.parse(data).events).toHaveLength(1);
 });
 
+test("inlines exactly one audio section when report.audio is present", () => {
+  const html = buildReportHTML({ meta: {}, events: [], rrwebEvents: [], audio: { dataUrl: "data:audio/webm;base64,AA", mime: "audio/webm;codecs=opus", startWall: 1, durationMs: 10 } }, null);
+  expect((html.match(/id="audio-section"/g) || []).length).toBe(1);
+});
+test("omits the audio section when report.audio is null", () => {
+  const html = buildReportHTML({ meta: {}, events: [], rrwebEvents: [], audio: null }, null);
+  expect(html.includes('id="audio-section"')).toBe(false);
+});
+
 test("no-replay export carries zero player overhead", () => {
   const withNull = buildReportHTML(makeReport(0), null);
   expect(withNull).not.toContain("UMD_MARKER");
