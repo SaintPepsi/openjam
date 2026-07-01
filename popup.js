@@ -9,6 +9,60 @@ const dot = document.getElementById("dot");
 const stateLabel = document.getElementById("state");
 const count = document.getElementById("count");
 const hint = document.getElementById("hint");
+const audioToggle = document.getElementById("audioToggle");
+const micSelect = document.getElementById("micSelect");
+const micError = document.getElementById("micError");
+
+async function loadAudioSettings() {
+  const { audioSettings } = await chrome.storage.local.get("audioSettings");
+  const s = audioSettings || { enabled: false, deviceId: null };
+  audioToggle.checked = s.enabled;
+  if (s.enabled) await populateMics(s.deviceId);
+  micSelect.hidden = !s.enabled;
+}
+
+async function populateMics(selectedId) {
+  try {
+    // A getUserMedia grant is required before device labels populate. It triggers
+    // the extension-scoped prompt once; the grant persists and is reused by the
+    // offscreen recorder (same chrome-extension:// origin). The popup never records.
+    const probe = await navigator.mediaDevices.getUserMedia({ audio: true });
+    probe.getTracks().forEach((t) => t.stop());
+    const mics = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "audioinput");
+    micSelect.innerHTML = "";
+    for (const m of mics) {
+      const opt = document.createElement("option");
+      opt.value = m.deviceId;
+      opt.textContent = m.label || "Microphone";
+      if (m.deviceId === selectedId) opt.selected = true;
+      micSelect.appendChild(opt);
+    }
+    micError.hidden = true;
+    return true;
+  } catch (err) {
+    micError.textContent = "Microphone unavailable: " + err.message;
+    micError.hidden = false;
+    return false;
+  }
+}
+
+async function saveAudioSettings() {
+  await chrome.storage.local.set({
+    audioSettings: { enabled: audioToggle.checked, deviceId: audioToggle.checked ? micSelect.value || null : null },
+  });
+}
+
+audioToggle.addEventListener("change", async () => {
+  if (audioToggle.checked) {
+    const ok = await populateMics(null);
+    micSelect.hidden = !ok;
+    if (!ok) audioToggle.checked = false;
+  } else {
+    micSelect.hidden = true;
+  }
+  await saveAudioSettings();
+});
+micSelect.addEventListener("change", saveAudioSettings);
 
 function send(action, extra) {
   return chrome.runtime.sendMessage({ action, ...extra });
@@ -59,4 +113,5 @@ shot.addEventListener("click", async () => {
 });
 
 refresh();
+loadAudioSettings();
 setInterval(refresh, 1000);
