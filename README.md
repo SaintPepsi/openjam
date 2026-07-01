@@ -5,10 +5,10 @@
 > 🔒 **Nothing is ever uploaded — you have full control over your data.** Everything stays on your machine; the entire bug report is a single local file that only travels if *you* choose to share it. It's a digital-ownership ethos we share with [FULU](https://www.fulu.org/).
 
 An open-source take on [Jam.dev](https://jam.dev): a Chrome extension that captures
-**console logs, network requests, JS errors, screenshots, device/environment info, and a
-full DOM session replay** ([rrweb](https://github.com/rrweb-io/rrweb)) onto a single
-correlated timeline, then exports a **self-contained HTML bug report** — open it offline
-and watch the session play back.
+**console logs, network requests, JS errors, screenshots, device/environment info, a
+full DOM session replay** ([rrweb](https://github.com/rrweb-io/rrweb)), and **opt-in local
+mic narration** onto a single correlated timeline, then exports a **self-contained HTML bug
+report** — open it offline and watch the session play back.
 
 No backend, no account, no telemetry. Everything stays on your machine
 ([privacy policy](PRIVACY.md)).

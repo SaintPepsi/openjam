@@ -604,7 +604,7 @@ Add these launch args wherever the persistent context is created:
 2. **Disconfirming (opt-in default):** fresh profile → `#audioToggle` unchecked; `#micSelect` has `hidden` attribute.
 3. **Offscreen lifecycle:** with audio on, start recording → evaluate `chrome.offscreen.hasDocument()` in the SW returns `true`; after stop → `false`. Disconfirming: audio off → stays `false`.
 4. **Report payload:** audio-on run → the stored report has `report.audio.mime === "audio/webm;codecs=opus"` and `durationMs > 0`. Disconfirming: audio-off run → `report.audio === null`.
-5. **Export:** build the export (see `test/e2e/build-export.mjs`) from an audio-on report → HTML matches `/<audio[^>]*src="data:audio\/webm/` exactly once. Disconfirming: audio-off export → zero matches.
+5. **Export:** build the export (see `test/e2e/build-export.mjs`) from an audio-on report → the `data:audio/webm` URL appears exactly once **inside the embedded `#openjam-data` JSON** (`(html.match(/data:audio\/webm/g) || []).length === 1`), and a browser-rendered export mounts exactly one runtime `<audio>` under `#audio-section` whose `src` starts `data:audio/webm`. Note: the `<audio>` is created at runtime by `mountAudio`, so do **not** grep the built HTML string for a static `<audio ... src="data:audio/webm">` — it isn't there. Disconfirming: audio-off export → zero `data:audio/webm` matches and no `#audio-section`.
 
 **Step 3: Run**
 Run: `npm run build && npx playwright test test/e2e/audio.spec.mjs`
@@ -669,8 +669,10 @@ replay/audio (OpenJam's guard only screens `chrome://`/extension pages,
 - Report opens with a Narration player; press play → your voice plays back.
 - As audio plays, timeline rows highlight in step with what you narrated (the order you
   described matches the order highlighted).
-- Export → open the downloaded HTML offline → narration plays, highlight still tracks.
-  `grep -c '<audio' openjam-*.html` → `1`.
+- Export → open the downloaded HTML offline → narration plays, highlight still tracks. The
+  `<audio>` is created at runtime by `mountAudio`, so grep the source URL, not a static tag:
+  `grep -c 'data:audio/webm' openjam-*.html` → `1` (inside `#openjam-data`), and the opened
+  report shows one `<audio>` under `#audio-section` whose `src` starts `data:audio/webm`.
 - **Disconfirming:** record once with the toggle OFF → no Narration player,
   `report.audio` null, export has zero `<audio>` elements.
 

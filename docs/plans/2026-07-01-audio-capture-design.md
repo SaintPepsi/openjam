@@ -82,24 +82,28 @@ Each component does one job.
   - On `start`: read the audio setting; if enabled, `chrome.offscreen.createDocument({
     url:'offscreen.html', reasons:['USER_MEDIA'], justification:'Record mic narration
     for a local bug report' })` and message it `{ audio:'start', deviceId, startWall }`.
-  - On `stop`: message `{ audio:'stop' }`, read the produced blob from extension-origin
-    IndexedDB, fold it into `report.audio`, then `chrome.offscreen.closeDocument()`.
+  - On `stop`: message `{ audio:'stop' }`, receive the recorded blob back **as a base64
+    data URL in the message response** (see Storage path), fold it into `report.audio`,
+    then `chrome.offscreen.closeDocument()`.
   - `startWall` is the **same** record-start `Date.now()` the other lanes use.
 
 - **`offscreen.html` / `offscreen.js`** (NEW) — media I/O boundary.
   - `getUserMedia({ audio: { deviceId: deviceId ? {exact:deviceId} : undefined } })`
     (reuses the popup's same-origin grant) → `MediaRecorder` (default
-    `audio/webm;codecs=opus`) → collect chunks. On stop, assemble one Blob and write it
-    to extension-origin IndexedDB, ack with `{ durationMs, mime }`.
+    `audio/webm;codecs=opus`) → collect chunks. On stop, assemble one Blob, read it as a
+    base64 data URL, and return `{ dataUrl, mime, startWall, durationMs }` in the message
+    response (chrome messaging is JSON-only — a Blob/ArrayBuffer would be lost; see
+    Storage path).
 
 - **`audio-sync.js`** (NEW) — pure functions.
   - `audioTimeFor(replayWall, startWall, durationMs) -> seconds`, clamped to
     `[0, durationMs/1000]`. No DOM, unit-tested.
 
 - **Viewer (`viewer.js`) + export (`report-builder.js`)** — render.
-  - Mount one `<audio>`; drive its `currentTime` from the replay/timeline clock via
-    `startWall` + `audioTimeFor`. Export inlines the blob as one base64 `<audio src>` in
-    the self-contained HTML.
+  - Mount one `<audio>` **at runtime** (`mountAudio`, from the embedded `#openjam-data`
+    JSON); drive the timeline-row highlight from the audio clock via `startWall`. The
+    export inlines the blob once as the `data:audio/webm` `dataUrl` inside `#openjam-data`
+    — the `<audio>` element itself is created at runtime, not baked into the HTML string.
 
 - **`manifest.js` (`buildManifest`)** — AI-facing index.
   - When `report.audio` is present, add a one-line `audio: { durationMs, mime }` to the
@@ -117,8 +121,8 @@ user: Start recording
   SW start -> (audio enabled?) createDocument(USER_MEDIA)
            -> offscreen: getUserMedia({deviceId}) -> MediaRecorder.start()
 user: Stop & open report
-  SW stop -> offscreen: MediaRecorder.stop() -> Blob -> IndexedDB(extension origin)
-          -> SW reads Blob -> report.audio = { dataUrl, mime, startWall, durationMs }
+  SW stop -> offscreen: MediaRecorder.stop() -> Blob -> base64 data URL
+          -> returned in the message response -> report.audio = { dataUrl, mime, startWall, durationMs }
           -> closeDocument() -> build/open report
 viewer/export: <audio> currentTime = audioTimeFor(replayWall, startWall, durationMs)
 ```
@@ -134,12 +138,27 @@ viewer/export: <audio> currentTime = audioTimeFor(replayWall, startWall, duratio
   (it's one continuous track):
   ```js
   report.audio = {
-    dataUrl: string,      // base64 audio/webm on export; blob ref in storage before that
+    dataUrl: string,      // base64 audio/webm, inlined from record time onward (see Storage path)
     mime: "audio/webm;codecs=opus",
     startWall: number,    // Date.now() at record start (shared with all lanes)
     durationMs: number,
   } | null                // null when audio was off or failed
   ```
+
+## Storage path
+
+**As built:** the offscreen document returns the recorded blob to the service worker as a
+**base64 data URL in the chrome message response** (chrome messaging is JSON-only, so a
+`Blob`/`ArrayBuffer` can't cross the boundary). The worker inlines it directly in
+`report.audio.dataUrl`, exactly the way screenshots are inlined, and it degrades the same
+way under storage pressure (`saveReport` drops `report.audio` alongside `rrwebEvents` when
+a save fails).
+
+Extension-origin **IndexedDB was considered** (a dedicated blob store the worker reads
+back) but **not used for v1**: the base64-inline path reuses the existing screenshot
+inlining + `saveReport` quota-degradation machinery with no new module or source of truth,
+and keeps the whole report a single self-contained value. IndexedDB stays available as a
+future option if audio size ever needs streaming/offloading.
 
 ## Error Handling (fail-open, mirrors the rrweb lane)
 
@@ -164,8 +183,11 @@ Audio is additive; any failure degrades to "no audio," never blocks core capture
   - With audio on, an offscreen document exists during recording
     (`chrome.offscreen.hasDocument()`), and is gone after stop.
   - `report.audio` is present iff the toggle was on.
-  - Exported HTML contains exactly **one** `<audio>` with a `data:` URL when audio was
-    recorded; **zero** when it wasn't (disconfirming).
+  - Exported HTML embeds the `data:audio/webm` URL exactly **once** inside the
+    `#openjam-data` JSON when audio was recorded (and a browser-rendered export mounts
+    exactly one runtime `<audio>` via `mountAudio`); **zero** when it wasn't
+    (disconfirming). The `<audio>` is created at runtime, so it is not a static tag in the
+    built HTML string.
 - **Dogfood** — narrate a real session, open the report, press play: audio plays and
   the timeline row highlight tracks the audio/replay position.
 
@@ -217,14 +239,19 @@ implementation step and blocks the e2e items below.
   test output.
 
 **Self-contained export**
-- [ ] Exactly one inlined audio track on export → export an audio-ON report;
-  `grep -c '<audio[^>]*src="data:audio/webm' report.html` → `1`. Evidence: pasted count.
-- [ ] **Disconfirming:** export an audio-OFF report → same grep → `0`. Evidence: pasted
-  count.
+- [ ] Exactly one inlined audio track on export → export an audio-ON report; the
+  `data:audio/webm` URL appears **exactly once inside the embedded `#openjam-data` JSON**
+  (`grep -c 'data:audio/webm' report.html` → `1`), and a browser-rendered export shows
+  **exactly one** runtime `<audio>` under `#audio-section` whose `src` starts
+  `data:audio/webm`. Note: the `<audio>` is created at runtime by `mountAudio`, so it is
+  **not** in the built HTML string — do not grep the export for a static
+  `<audio ... src="data:audio/webm">`. Evidence: pasted count + the rendered element.
+- [ ] **Disconfirming:** export an audio-OFF report → no `#audio-section` and
+  `grep -c 'data:audio/webm' report.html` → `0`. Evidence: pasted count.
 - [ ] No external audio egress → `grep -nE "fetch|XMLHttpRequest|WebSocket|https?://"`
   across `offscreen.js` shows no upload of the blob; the blob path is
-  IndexedDB → report → inlined data URL only. Evidence: pasted grep + `file:line` of the
-  IndexedDB write and the export inline.
+  `MediaRecorder` blob → base64 data URL → message response → `report.audio.dataUrl`
+  inline only. Evidence: pasted grep + `file:line` of the data-URL read and the export inline.
 
 **Sync (pure function)**
 - [ ] `audioTimeFor` maps a mid-session wall to the right offset → `bun test`:
@@ -262,9 +289,16 @@ offscreen permission reuse headlessly" is a valid result and feeds Open Question
 
 ## Open Questions
 
-1. **Permission reuse popup → offscreen** (same `chrome-extension://` origin). High
-   confidence, but it's the first thing to verify in a thin spike — if it doesn't hold,
-   fall back to Approach 2 (iframe inside the offscreen doc).
+1. **Permission reuse popup → offscreen** (same `chrome-extension://` origin).
+   **Status (partly verified):** the e2e (`e2e/audio.spec.mjs`) exercises the offscreen
+   `getUserMedia` → `MediaRecorder` path successfully **headless with a fake device**
+   (`--use-fake-device-for-media-stream --use-fake-ui-for-media-stream`, so the prompt
+   auto-grants) — the mechanics work end to end and produce a `report.audio` track. What
+   this does **not** prove is the exact popup-grant → offscreen-reuse *persistence* with a
+   real mic and a real one-time prompt (the fake-UI flag bypasses the prompt entirely). So
+   the popup→offscreen same-origin grant reuse still wants a real-mic **dogfood
+   confirmation** — Task 0 remains a manual check. If real-mic reuse doesn't hold, fall
+   back to Approach 2 (iframe inside the offscreen doc).
 2. **Fast-follow (tab audio)** — second stream via `tabCapture.getMediaStreamId` mixed
    with the mic through an `AudioContext`; adds `tabCapture` and the re-pipe-to-speakers
    step. Out of scope for v1, noted so the data model (`report.audio`) doesn't need to
