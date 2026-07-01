@@ -17,33 +17,44 @@ async function loadAudioSettings() {
   const { audioSettings } = await chrome.storage.local.get("audioSettings");
   const s = audioSettings || { enabled: false, deviceId: null };
   audioToggle.checked = s.enabled;
-  if (s.enabled) await populateMics(s.deviceId);
-  micSelect.hidden = !s.enabled;
+  if (s.enabled) await populateMics(s.deviceId); // manages picker visibility itself
+  else micSelect.hidden = true;
+}
+
+async function micGranted() {
+  // A getUserMedia prompt can't survive in the toolbar popup (it loses focus and
+  // auto-dismisses). So the popup never calls getUserMedia — it only reads the
+  // permission state. The grant is obtained on the focused mic-permission page.
+  try {
+    const s = await navigator.permissions.query({ name: "microphone" });
+    return s.state === "granted";
+  } catch {
+    return false;
+  }
 }
 
 async function populateMics(selectedId) {
-  try {
-    // A getUserMedia grant is required before device labels populate. It triggers
-    // the extension-scoped prompt once; the grant persists and is reused by the
-    // offscreen recorder (same chrome-extension:// origin). The popup never records.
-    const probe = await navigator.mediaDevices.getUserMedia({ audio: true });
-    probe.getTracks().forEach((t) => t.stop());
-    const mics = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "audioinput");
-    micSelect.innerHTML = "";
-    for (const m of mics) {
-      const opt = document.createElement("option");
-      opt.value = m.deviceId;
-      opt.textContent = m.label || "Microphone";
-      if (m.deviceId === selectedId) opt.selected = true;
-      micSelect.appendChild(opt);
-    }
-    micError.hidden = true;
-    return true;
-  } catch (err) {
-    micError.textContent = "Microphone unavailable: " + err.message;
+  if (!(await micGranted())) {
+    // Not granted yet: open the focused permission page (the popup can't prompt).
+    chrome.tabs.create({ url: chrome.runtime.getURL("mic-permission.html") });
+    micError.textContent = "Opening a tab to grant microphone access — click Allow there, then reopen this popup.";
     micError.hidden = false;
+    micSelect.hidden = true;
     return false;
   }
+  // Granted: labels are available without any prompt.
+  const mics = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "audioinput");
+  micSelect.innerHTML = "";
+  for (const m of mics) {
+    const opt = document.createElement("option");
+    opt.value = m.deviceId;
+    opt.textContent = m.label || "Microphone";
+    if (m.deviceId === selectedId) opt.selected = true;
+    micSelect.appendChild(opt);
+  }
+  micError.hidden = true;
+  micSelect.hidden = false;
+  return true;
 }
 
 async function saveAudioSettings() {
@@ -54,11 +65,12 @@ async function saveAudioSettings() {
 
 audioToggle.addEventListener("change", async () => {
   if (audioToggle.checked) {
-    const ok = await populateMics(null);
-    micSelect.hidden = !ok;
-    if (!ok) audioToggle.checked = false;
+    // Keep the setting enabled even while the grant is pending — recording will
+    // use the default mic until a specific one is picked.
+    await populateMics(null);
   } else {
     micSelect.hidden = true;
+    micError.hidden = true;
   }
   await saveAudioSettings();
 });

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>OpenJam — microphone access</title>
+<style>
+  body{font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#0f1115;color:#e6e9ef;margin:0;padding:40px;max-width:520px}
+  h1{font-size:18px;margin:0 0 12px}
+  .muted{color:#8b93a3}
+  .ok{color:#3fb950;font-weight:600}
+  .err{color:#f85149;font-weight:600}
+  code{background:#1c1f27;padding:1px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+  <h1>🎙 Enable microphone for OpenJam</h1>
+  <p id="msg" class="muted">Requesting microphone access…</p>
+  <p class="muted">OpenJam records narration <strong>locally only</strong> — audio is embedded in your report file and never uploaded.</p>
+  <script type="module" src="mic-permission.js"></script>
+</body>
+</html>
