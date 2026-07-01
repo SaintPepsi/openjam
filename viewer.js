@@ -4,7 +4,7 @@
 // dist/rrweb-player.js (copied there by build.mjs). Exports the self-contained
 // file on demand using the same renderer + mount the export embeds.
 
-import { renderReport, mountReplay, REPORT_CSS, REPLAY_CSS } from "./renderer.js";
+import { renderReport, mountReplay, mountAudio, REPORT_CSS, REPLAY_CSS } from "./renderer.js";
 import { buildReportHTML } from "./report-builder.js";
 import { renderErrorReport } from "./issue-link.js";
 
@@ -41,6 +41,16 @@ async function load() {
     } catch (err) {
       // A broken replay shouldn't take the timeline down with it.
       renderErrorReport(document.getElementById("replay"), "Replay failed to mount: " + err, ENV);
+    }
+  }
+
+  if (report.audio && report.audio.dataUrl) {
+    const audioSection = document.getElementById("audio-section");
+    audioSection.hidden = false;
+    try {
+      mountAudio(document.getElementById("audio"), report);
+    } catch (err) {
+      renderErrorReport(document.getElementById("audio"), "Audio failed to mount: " + err, ENV);
     }
   }
 
