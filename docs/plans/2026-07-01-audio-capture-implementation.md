@@ -12,7 +12,7 @@
 
 **Divergences from the design doc (intentional, see design "Storage path"):**
 - Blob handoff is base64-over-message + inline in `report.audio.dataUrl` (mirrors screenshot inlining + `saveReport` degradation), **not** a new IndexedDB module.
-- v1 sync is one-directional (audio → timeline highlight); rrweb-replay ↔ audio two-way scrub is a follow-up.
+- Narration is driven by the rrweb replay clock — the replayer is the single player (play/pause/seek/speed move the audio too); a standalone audio player exists only for reports with no replay. (Superseded the earlier "one-directional, two-way deferred" plan after the initial two-player build.)
 Update the design doc's "Storage path" section to match as the final task.
 
 **Conventions to preserve:**

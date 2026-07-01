@@ -102,10 +102,14 @@ Each component does one job.
     `[0, durationMs/1000]`. No DOM, unit-tested.
 
 - **Viewer (`viewer.js`) + export (`report-builder.js`)** — render.
-  - Mount one `<audio>` **at runtime** (`mountAudio`, from the embedded `#openjam-data`
-    JSON); drive the timeline-row highlight from the audio clock via `startWall`. The
-    export inlines the blob once as the `data:audio/webm` `dataUrl` inside `#openjam-data`
-    — the `<audio>` element itself is created at runtime, not baked into the HTML string.
+  - **One player.** When a report has a replay, `mountReplay` owns a hidden `<audio>`
+    and drives it from the replay clock: `audioTime = (rrwebStart + getCurrentTime()) -
+    audioStart`, clamped to the track, drift-corrected, paused outside the narration
+    window; play/pause/seek/speed move both, and the replay highlights the timeline row
+    at the current wall. A standalone `mountAudio` player is rendered **only** when there
+    is no replay to drive it. The export inlines the blob once as the `data:audio/webm`
+    `dataUrl` inside `#openjam-data` — the `<audio>` element is created at runtime, not
+    baked into the HTML string.
 
 - **`manifest.js` (`buildManifest`)** — AI-facing index.
   - When `report.audio` is present, add a one-line `audio: { durationMs, mime }` to the

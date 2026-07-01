@@ -19,10 +19,14 @@ offscreen doc records **one continuous `webm/opus` track** for the whole session
 it back to the worker as a base64 data URL. The worker folds it into `report.audio`
 (`{ dataUrl, mime, startWall, durationMs }`), inlined the same way screenshots are.
 
-Playback is created **at runtime** by `mountAudio` (`renderer.js`): both the in-extension
-viewer and the self-contained export build the `<audio>` element from the embedded
-`#openjam-data` JSON, and on each `timeupdate` highlight the timeline row nearest the
-current wall-clock position (`startWall` + `currentTime`).
+Playback uses **one player**. When the report has a [session replay](session-replay.md),
+the rrweb replayer is the single controller and narration follows it: pressing play,
+pausing, scrubbing, or changing speed moves the audio too (the hidden `<audio>` is
+positioned at `(rrwebStart + replay time) − audioStart`, clamped and drift-corrected), and
+the replay highlights the timeline row at the current moment. When there's no replay to
+drive it, a standalone runtime `<audio>` player (`mountAudio`) is shown instead. The
+`<audio>` element is always built at runtime from the embedded `#openjam-data` JSON, in
+both the in-extension viewer and the self-contained export.
 
 ## What to expect / limitations
 
