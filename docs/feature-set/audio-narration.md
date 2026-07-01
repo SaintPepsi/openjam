@@ -31,6 +31,10 @@ current wall-clock position (`startWall` + `currentTime`).
   ([Privacy & data control](privacy.md)).
 - **One continuous track.** A single `audio/webm;codecs=opus` blob per session, not
   per-clip events. Tab audio is a fast-follow, not in this version.
+- **First-time grant opens a tab.** The first time you enable audio, OpenJam opens a
+  short permission page and Chrome asks "OpenJam wants to use your microphone" — click
+  Allow, then reopen the popup to pick a mic. (The toolbar popup can't show the prompt
+  itself; it loses focus and the prompt dismisses.) The grant persists after that.
 - **Needs the `offscreen` permission.** v1 adds exactly one new permission (`offscreen`)
   so the offscreen document can run `getUserMedia`/`MediaRecorder`.
 - **Fail-open.** Any audio failure (no mic, permission denied, recorder error) degrades to

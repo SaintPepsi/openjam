@@ -70,13 +70,15 @@ computes sync; the viewer renders.
 Each component does one job.
 
 - **`popup.js` / `popup.html`** — configuration + permission.
-  - A "🎙 Record audio" toggle. When switched on: call `getUserMedia({audio:true})`
-    once to trigger the extension-scoped prompt, then `enumerateDevices()` and populate
-    a mic `<select>` with real labels (labels are empty before a grant). **Stop the
-    probe stream immediately** — the popup never records.
+  - A "🎙 Record audio" toggle. When switched on: check `navigator.permissions.query
+    ({name:'microphone'})`. If **granted**, `enumerateDevices()` and populate a mic
+    `<select>` with real labels. If **not granted**, open the focused
+    `mic-permission.html` page in a tab to obtain the grant (the popup itself **cannot**
+    prompt — see Open Question #1). The popup never calls `getUserMedia` and never records.
   - Persist `{ enabled, deviceId }` to `chrome.storage.local`. The popup closing is
     harmless; it only writes settings.
-  - Denied permission → inline error, toggle stays off.
+  - `mic-permission.html` / `.js` (NEW): a focused extension page that calls
+    `getUserMedia` (prompt shows properly), caches the device list, and self-closes.
 
 - **`background.js`** — orchestrator (service worker).
   - On `start`: read the audio setting; if enabled, `chrome.offscreen.createDocument({
@@ -289,16 +291,19 @@ offscreen permission reuse headlessly" is a valid result and feeds Open Question
 
 ## Open Questions
 
-1. **Permission reuse popup → offscreen** (same `chrome-extension://` origin).
-   **Status (partly verified):** the e2e (`e2e/audio.spec.mjs`) exercises the offscreen
-   `getUserMedia` → `MediaRecorder` path successfully **headless with a fake device**
-   (`--use-fake-device-for-media-stream --use-fake-ui-for-media-stream`, so the prompt
-   auto-grants) — the mechanics work end to end and produce a `report.audio` track. What
-   this does **not** prove is the exact popup-grant → offscreen-reuse *persistence* with a
-   real mic and a real one-time prompt (the fake-UI flag bypasses the prompt entirely). So
-   the popup→offscreen same-origin grant reuse still wants a real-mic **dogfood
-   confirmation** — Task 0 remains a manual check. If real-mic reuse doesn't hold, fall
-   back to Approach 2 (iframe inside the offscreen doc).
+1. **Where the mic grant is requested — RESOLVED (design corrected).** The original
+   Approach 1 assumed the **popup** could host the one-time `getUserMedia` prompt. Dogfood
+   proved it **cannot**: the toolbar popup loses focus the instant the prompt appears, so
+   Chrome auto-dismisses it (`getUserMedia` rejects with "Permission dismissed", no visible
+   prompt). **Fix:** request the grant on a dedicated, focused **`mic-permission.html`**
+   page opened in a tab; the popup now only reads `navigator.permissions.query` and
+   enumerates devices when already granted. The offscreen-reuse half of the design is
+   unchanged and confirmed by e2e (offscreen `getUserMedia` → `MediaRecorder` →
+   `report.audio` works headless). This is a lighter variant of Approach 2 (a focused
+   extension page instead of an offscreen iframe) — the popup never prompts.
+   **Still wants a real-mic dogfood:** confirming that after granting on the permission
+   page, the offscreen recorder reuses the persisted same-origin grant without a second
+   prompt.
 2. **Fast-follow (tab audio)** — second stream via `tabCapture.getMediaStreamId` mixed
    with the mic through an `AudioContext`; adds `tabCapture` and the re-pipe-to-speakers
    step. Out of scope for v1, noted so the data model (`report.audio`) doesn't need to
