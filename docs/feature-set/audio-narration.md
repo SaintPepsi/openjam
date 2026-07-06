@@ -19,14 +19,24 @@ offscreen doc records **one continuous `webm/opus` track** for the whole session
 it back to the worker as a base64 data URL. The worker folds it into `report.audio`
 (`{ dataUrl, mime, startWall, durationMs }`), inlined the same way screenshots are.
 
-Playback uses **one player**. When the report has a [session replay](session-replay.md),
-the rrweb replayer is the single controller and narration follows it: pressing play,
-pausing, scrubbing, or changing speed moves the audio too (the hidden `<audio>` is
-positioned at `(rrwebStart + replay time) − audioStart`, clamped and drift-corrected), and
-the replay highlights the timeline row at the current moment. When there's no replay to
-drive it, a standalone runtime `<audio>` player (`mountAudio`) is shown instead. The
-`<audio>` element is always built at runtime from the embedded `#openjam-data` JSON, in
-both the in-extension viewer and the self-contained export.
+Playback uses **one player** with **one timeline spanning the longer of the replay and the
+narration** — you usually keep talking after the screen stops changing, and that tail must
+stay reachable. Inside the replay's span the rrweb replayer is the clock and narration
+follows it: play, pause, scrub, and speed move both. Past the replay's end the player holds
+the last frame and a wall clock runs out the narration tail (a tick on the waveform marks
+where on-screen activity ends). Position is `narration = fn(timeline clock)`: `(rrwebStart +
+t) − audioStart`, and the replay highlights the timeline row at the current moment.
+Crucially, the player plays the **decoded audio buffer through Web Audio**
+(`AudioBufferSourceNode`), not an `<audio>` element: MediaRecorder `webm/opus` blobs have no
+reliable duration and aren't seekable, so an element drifts, but a decoded buffer seeks
+sample-accurately via `start(0, offset)`. The same decode feeds the waveform, so decode
+happens once. The player keeps its original scrub bar and adds, only when a track exists, a
+**waveform strip** beneath it — drawn at the narration's true offset and scale on the
+timeline — as a visible cue that narration exists and a second seek surface, a
+**volume/mute** control (a `GainNode`) by the speed buttons, and a **hover-timestamp**
+tooltip over both the scrub bar and the waveform. When there's no replay to drive it, a
+standalone runtime `<audio>` player (`mountAudio`) is shown instead, built at runtime from
+the embedded `#openjam-data` JSON.
 
 ## What to expect / limitations
 

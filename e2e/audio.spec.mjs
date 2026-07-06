@@ -227,6 +227,181 @@ test("with a replay, there is no standalone audio player — the replayer drives
   expect(html.match(/data:audio\/webm/g)).toHaveLength(1);
 });
 
+test("replay player with audio renders a waveform, volume control, and hover-time in a browser", async () => {
+  // The replay-driven player gains three audio affordances: a waveform canvas as
+  // the scrubber background (visible cue that narration exists), a volume/mute
+  // control, and a hover-timestamp tooltip. A stub replayer satisfies the engine
+  // interface; the invalid tiny data URL fails decode, so we assert the ELEMENTS
+  // exist (created before decode) rather than the drawn bars.
+  const replayReport = { ...AUDIO_REPORT, rrwebEvents: [{ type: 4, timestamp: 1 }, { type: 3, timestamp: 2 }] };
+  const stubAssets = {
+    ENGINE_IIFE:
+      "window.RRWebReplayer=function(){return{getMetaData:function(){return{totalTime:1000}}," +
+      "getCurrentTime:function(){return 0},on:function(){},pause:function(){},play:function(){},setConfig:function(){}};};",
+    ENGINE_CSS: "",
+  };
+  const html = buildReportHTML(replayReport, stubAssets);
+  const page = await context.newPage();
+  await page.setContent(html, { waitUntil: "load" });
+  // Original scrub bar is untouched; the waveform is a separate strip beneath it.
+  await expect(page.locator("#replay .oj-progress")).toHaveCount(1);
+  await expect(page.locator("#replay .oj-waveform")).toHaveCount(1);
+  await expect(page.locator("#replay .oj-waveform canvas.oj-wave")).toHaveCount(1);
+  await expect(page.locator("#replay .oj-vol")).toHaveCount(1);
+  await expect(page.locator("#replay .oj-controls button.oj-icon")).toHaveCount(1);
+  // Hover-time tooltip on both the scrub bar and the waveform strip.
+  await expect(page.locator("#replay .oj-hover-time")).toHaveCount(2);
+  // Audio-sync diagnostics block renders and the replayer fills totalTime.
+  await expect(page.getByText("Audio sync diagnostics")).toHaveCount(1);
+  await expect(page.locator("#oj-diag-total")).toHaveText(/\d+ ms/);
+  await page.close();
+});
+
+test("timeline spans narration that outlasts the replay, and the wave tooltip renders inside the strip", async () => {
+  // You usually keep talking after the screen stops changing. The one timeline
+  // must span the LONGER of replay and narration or the tail is unreachable:
+  // stub replay span = 1000ms, narration window = 3200ms → total shows 0:03.
+  const stubAssets = {
+    ENGINE_IIFE:
+      "window.RRWebReplayer=function(){return{getMetaData:function(){return{totalTime:1000}}," +
+      "getCurrentTime:function(){return 0},on:function(){},pause:function(){},play:function(){},setConfig:function(){}};};",
+    ENGINE_CSS: "",
+  };
+  const longAudio = {
+    ...AUDIO_REPORT,
+    audio: { ...AUDIO_REPORT.audio, startWall: 1, durationMs: 3200 },
+    rrwebEvents: [{ type: 4, timestamp: 1 }, { type: 3, timestamp: 2 }],
+  };
+  const page = await context.newPage();
+  await page.setContent(buildReportHTML(longAudio, stubAssets), { waitUntil: "load" });
+  await expect(page.locator("#replay .oj-time")).toHaveText("0:00 / 0:03");
+
+  // Hovering the waveform strip shows the timestamp tooltip INSIDE the strip —
+  // the strip clips overflow, so a tip above its top edge would be invisible.
+  const strip = page.locator("#replay .oj-waveform");
+  await strip.hover({ position: { x: 120, y: 22 } });
+  const tip = page.locator("#replay .oj-waveform .oj-hover-time");
+  await expect(tip).toBeVisible();
+  await expect(tip).toHaveText(/\d:\d\d/);
+  const tipBox = await tip.boundingBox();
+  const stripBox = await strip.boundingBox();
+  expect(tipBox.y).toBeGreaterThanOrEqual(stripBox.y);
+  expect(tipBox.y + tipBox.height).toBeLessThanOrEqual(stripBox.y + stripBox.height + 1);
+
+  // Disconfirming: narration shorter than the replay leaves the replay's span.
+  const shortAudio = {
+    ...AUDIO_REPORT,
+    rrwebEvents: [{ type: 4, timestamp: 1 }, { type: 3, timestamp: 2 }],
+  };
+  await page.setContent(buildReportHTML(shortAudio, stubAssets), { waitUntil: "load" });
+  await expect(page.locator("#replay .oj-time")).toHaveText("0:00 / 0:01");
+  await page.close();
+});
+
+// A replayer stub whose clock actually ADVANCES (1000ms span, real time × speed,
+// fires "finish" at the end) — the static stub above can't exercise playback.
+const ADVANCING_STUB =
+  "window.RRWebReplayer=function(){" +
+  "var base=0,startAt=0,playing=false,speed=1,handlers={};" +
+  "function cur(){return playing?Math.min(base+(Date.now()-startAt)*speed,1000):base;}" +
+  "return{getMetaData:function(){return{totalTime:1000}}," +
+  "getCurrentTime:function(){var t=cur();" +
+  "if(playing&&t>=1000){base=1000;playing=false;if(handlers.finish)setTimeout(handlers.finish,0);}" +
+  "return t;}," +
+  "play:function(t){if(t!=null)base=t;startAt=Date.now();playing=true;}," +
+  "pause:function(t){base=t!=null?t:cur();playing=false;}," +
+  "setConfig:function(c){base=cur();startAt=Date.now();if(c&&c.speed)speed=c.speed;}," +
+  "on:function(ev,fn){handlers[ev]=fn;}};};";
+
+// Minimal PCM WAV of silence — decodeAudioData accepts it, so the REAL audio
+// path (decode → buffer playback → syncAudio) runs, unlike the 4-byte webm.
+function silentWavDataUrl(seconds, rate = 8000) {
+  const n = Math.floor(seconds * rate);
+  const buf = Buffer.alloc(44 + n * 2);
+  buf.write("RIFF", 0); buf.writeUInt32LE(36 + n * 2, 4); buf.write("WAVE", 8);
+  buf.write("fmt ", 12); buf.writeUInt32LE(16, 16); buf.writeUInt16LE(1, 20); buf.writeUInt16LE(1, 22);
+  buf.writeUInt32LE(rate, 24); buf.writeUInt32LE(rate * 2, 28); buf.writeUInt16LE(2, 32); buf.writeUInt16LE(16, 34);
+  buf.write("data", 36); buf.writeUInt32LE(n * 2, 40);
+  return "data:audio/wav;base64," + buf.toString("base64");
+}
+
+test("playback runs through the replay's end, out the narration tail, without stacking paint loops", async () => {
+  // The whole point of the feature is the clock — drive a real play-through:
+  // replay span 1000ms, decodable 3.2s narration, so play must cross the
+  // replay's end into the tail and finish at the narration's end.
+  const report = {
+    ...AUDIO_REPORT,
+    audio: { dataUrl: silentWavDataUrl(3.2), mime: "audio/wav", startWall: 1, durationMs: 3200 },
+    rrwebEvents: [{ type: 4, timestamp: 1 }, { type: 3, timestamp: 2 }],
+  };
+  const page = await context.newPage();
+  await page.setContent(buildReportHTML(report, { ENGINE_IIFE: ADVANCING_STUB, ENGINE_CSS: "" }), { waitUntil: "load" });
+  // Track rAF callbacks that are scheduled but not yet fired/cancelled. Installed
+  // after load but before Play: the paused player has no pending frame yet and
+  // looks rAF up at call time, so every playback frame goes through the tracker.
+  await page.evaluate(() => {
+    const live = new Set();
+    const req = window.requestAnimationFrame.bind(window);
+    const can = window.cancelAnimationFrame.bind(window);
+    window.requestAnimationFrame = (cb) => {
+      const id = req((ts) => { live.delete(id); cb(ts); });
+      live.add(id);
+      return id;
+    };
+    window.cancelAnimationFrame = (id) => { live.delete(id); can(id); };
+    window.__ojPendingFrames = () => live.size;
+  });
+  const label = page.locator("#replay .oj-time");
+  await expect(label).toHaveText("0:00 / 0:03");
+
+  await page.locator("#replay .oj-controls button", { hasText: "Play" }).click();
+  // Scrubbing while playing must not stack extra paint loops — each leaked loop
+  // drags a full waveform repaint per frame. After 5 seeks: at most one pending.
+  const progress = page.locator("#replay .oj-progress");
+  for (let i = 0; i < 5; i++) await progress.click({ position: { x: 30, y: 4 } });
+  expect(await page.evaluate(() => window.__ojPendingFrames())).toBeLessThanOrEqual(1);
+
+  // The replay's clock caps at 1000ms (0:01) — reaching 0:02 proves the tail
+  // wall-clock took over past the replay's end. (Disconfirming: without the
+  // master timeline this label can never exceed 0:01.)
+  await expect(label).toHaveText(/^0:02 \//, { timeout: 8000 });
+
+  // Pause inside the tail holds position…
+  await page.locator("#replay .oj-controls button", { hasText: "Pause" }).click();
+  const frozen = await label.textContent();
+  await page.waitForTimeout(300);
+  await expect(label).toHaveText(frozen);
+
+  // …and resume runs the tail out to the narration's end.
+  await page.locator("#replay .oj-controls button", { hasText: "Play" }).click();
+  await expect(page.locator("#replay .oj-controls button", { hasText: "↺ Replay" })).toBeVisible({ timeout: 8000 });
+  await expect(label).toHaveText("0:03 / 0:03");
+  expect(await page.evaluate(() => window.__ojPendingFrames())).toBe(0);
+  await page.close();
+});
+
+test("[disconfirming] replay player without audio has no waveform or volume control", async () => {
+  const replayReport = { ...AUDIO_REPORT, audio: null, rrwebEvents: [{ type: 4, timestamp: 1 }, { type: 3, timestamp: 2 }] };
+  const stubAssets = {
+    ENGINE_IIFE:
+      "window.RRWebReplayer=function(){return{getMetaData:function(){return{totalTime:1000}}," +
+      "getCurrentTime:function(){return 0},on:function(){},pause:function(){},play:function(){},setConfig:function(){}};};",
+    ENGINE_CSS: "",
+  };
+  const html = buildReportHTML(replayReport, stubAssets);
+  const page = await context.newPage();
+  await page.setContent(html, { waitUntil: "load" });
+  await expect(page.locator("#replay .oj-waveform")).toHaveCount(0);
+  await expect(page.locator("#replay canvas.oj-wave")).toHaveCount(0);
+  await expect(page.locator("#replay .oj-vol")).toHaveCount(0);
+  // The scrub bar and its hover-time tooltip stay — useful for replay-only reports.
+  await expect(page.locator("#replay .oj-progress")).toHaveCount(1);
+  await expect(page.locator("#replay .oj-hover-time")).toHaveCount(1);
+  // No audio → no sync diagnostics.
+  await expect(page.getByText("Audio sync diagnostics")).toHaveCount(0);
+  await page.close();
+});
+
 test("export renders a runtime <audio src=data:audio/webm> element in a browser", async () => {
   // The true export shape: opened in a browser, mountAudio must create exactly
   // one <audio> element sourced from the webm data URL. Rendered from a fixed

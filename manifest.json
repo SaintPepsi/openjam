@@ -2,9 +2,12 @@
   "manifest_version": 3,
   "name": "OpenJam",
   "version": "0.5.0",
-  "description": "Capture console, network, screenshots and device info on a timeline, then export a self-contained bug report. Open-source Jam.dev.",
+  "description": "Capture console, network, screenshots, mic narration and device info into one self-contained bug report. Open-source Jam.dev.",
   "permissions": ["debugger", "storage", "unlimitedStorage", "scripting", "offscreen"],
   "host_permissions": ["<all_urls>"],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline' data: *; img-src * data: blob:; media-src * data: blob:; font-src * data:; frame-src 'self' data: blob:; child-src 'self' data: blob:; connect-src 'none'"
+  },
   "background": { "service_worker": "background.js", "type": "module" },
   "content_scripts": [
     {

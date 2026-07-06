@@ -4,8 +4,15 @@
 // it renders offline anywhere. replayAssets (the rrweb-player UMD + CSS
 // strings from src/generated/player-assets.js, produced by build.mjs) enable
 // the session-replay player when the report carries rrweb events.
-// Inline scripts are allowed here because the file opens as file:// (no CSP);
-// the in-extension viewer must use external scripts — see viewer.js.
+//
+// PRIVACY: OpenJam itself must make no outbound connections — no telemetry, no
+// phone-home. The CSP meta (below) enforces that: connect-src 'none' blocks
+// fetch/XHR/beacon/WebSocket, and scripts are inline-only (no external or eval),
+// so nothing OpenJam ships can exfiltrate. The session replay, however, is a
+// faithful reproduction of the captured page, so it IS allowed to load that
+// page's own passive assets — images/fonts/stylesheets (img/font/style-src *).
+// OpenJam's own shell only ever references data: assets, so it stays inert; only
+// the rrweb replay reaches the network, and only for GETs of page subresources.
 
 import { renderReport, mountReplay, mountAudio, REPORT_CSS, REPLAY_CSS } from "./renderer.js";
 import { buildManifest } from "./manifest.js";
@@ -33,6 +40,7 @@ export function buildReportHTML(report, replayAssets) {
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline' data: *; img-src * data: blob:; media-src * data: blob:; font-src * data:; frame-src 'self' data: blob:; connect-src 'none'; base-uri 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>OpenJam Report — ${title}</title>
 <style>${REPORT_CSS}</style>
@@ -44,6 +52,10 @@ ${hasStandaloneAudio ? `<div id="audio-section"><h2>Narration</h2><div id="audio
 <div id="app"></div>
 <script id="openjam-ai" type="application/json">${manifestJson}</script>
 <script id="openjam-data" type="application/json">${dataJson}</script>
+<script>
+${renderReport.toString()}
+renderReport(document.getElementById("app"), JSON.parse(document.getElementById("openjam-data").textContent));
+</script>
 ${
   hasReplay
     ? `<script>${engineJs}</script>
@@ -59,10 +71,6 @@ try {
 </script>`
     : ""
 }
-<script>
-${renderReport.toString()}
-renderReport(document.getElementById("app"), JSON.parse(document.getElementById("openjam-data").textContent));
-</script>
 ${hasStandaloneAudio ? `<script>
 ${mountAudio.toString()}
 try { mountAudio(document.getElementById("audio"), JSON.parse(document.getElementById("openjam-data").textContent)); }
