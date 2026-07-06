@@ -16,6 +16,7 @@ import {
   sendAction,
   stopAndOpenViewer,
 } from "../test/e2e/harness.mjs";
+import { buildReportHTML } from "../report-builder.js";
 
 test.describe.configure({ mode: "serial" }); // one browser, recordings are global state
 
@@ -144,6 +145,62 @@ test("exported HTML is self-contained and replays offline", async () => {
   fixtureServer = await serveFixture(); // restore for later tests
 });
 
+test("exported report: OpenJam can't phone home, but the replay may load page assets", async () => {
+  // PRIVACY line: OpenJam itself makes no outbound connections (connect-src 'none'
+  // blocks fetch/XHR/beacon; no external scripts), but the session replay is a
+  // faithful reproduction of the page, so it IS allowed to load that page's own
+  // passive assets (images/fonts/styles). Assert both halves via CSP violations.
+  const report = { meta: { pageTitle: "x", pageUrl: "x", capturedAt: 1, durationMs: 1, eventCount: 0 }, device: {}, events: [], rrwebEvents: [], audio: null };
+  const html = buildReportHTML(report, null);
+  const PROBE_URL = "https://example.com/__oj_egress_probe__";
+
+  // Returns the violated CSP directive for the probe URL, or null if not blocked.
+  const probeImg = (page) =>
+    page.evaluate(
+      (url) =>
+        new Promise((resolve) => {
+          let v = null;
+          document.addEventListener("securitypolicyviolation", (e) => {
+            if (e.blockedURI && e.blockedURI.indexOf("__oj_egress_probe__") !== -1) v = e.violatedDirective;
+          });
+          const img = document.createElement("img");
+          const done = () => resolve(v);
+          img.onload = done;
+          img.onerror = () => setTimeout(done, 50);
+          setTimeout(done, 1200);
+          img.src = url + ".png";
+          document.body.appendChild(img);
+        }),
+      PROBE_URL,
+    );
+  const probeFetch = (page) =>
+    page.evaluate(
+      (url) =>
+        new Promise((resolve) => {
+          let v = null;
+          document.addEventListener("securitypolicyviolation", (e) => {
+            if (e.blockedURI && e.blockedURI.indexOf("__oj_egress_probe__") !== -1) v = e.violatedDirective;
+          });
+          fetch(url).catch(() => {}).finally(() => setTimeout(() => resolve(v), 50));
+          setTimeout(() => resolve(v), 1200);
+        }),
+      PROBE_URL,
+    );
+
+  const page = await context.newPage();
+  await page.setContent(html, { waitUntil: "domcontentloaded" });
+  expect(await probeImg(page)).toBeNull(); // replay assets: allowed (fidelity)
+  expect(await probeFetch(page)).toMatch(/connect-src/); // OpenJam egress: blocked
+  await page.close();
+
+  // Disconfirming: with no CSP, fetch raises no violation — proves the assertion
+  // measures the CSP, not a fetch that always resolves null.
+  const bare = await context.newPage();
+  await bare.setContent(`<!doctype html><meta charset="utf-8"><body>`, { waitUntil: "domcontentloaded" });
+  expect(await probeFetch(bare)).toBeNull();
+  await bare.close();
+});
+
 test("restricted pages fail with a reportable error", async () => {
   // Without the `tabs` permission, tabs.query can't url-match chrome:// pages
   // (host permissions don't cover that scheme) — so exercise the background's
@@ -177,7 +234,7 @@ test("restricted pages fail with a reportable error", async () => {
   // The failure renders as a red error callout, not gray hint text. Visual
   // baseline of the whole hint region (error box + report link + PII warning);
   // its text is static, so the snapshot is deterministic across runs.
-  await expect(popup.locator(".oj-error")).toBeVisible();
+  await expect(popup.locator("#hint .oj-error")).toBeVisible();
   await expect(popup.locator("#hint")).toHaveScreenshot("popup-error-callout.png");
   await restricted.close();
   await popup.close();

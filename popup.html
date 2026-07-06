@@ -18,6 +18,8 @@
   .count{color:var(--muted);margin-left:auto;font-variant-numeric:tabular-nums}
   .hint{color:var(--muted);font-size:11px;margin-top:6px}
   .hint a{color:var(--accent);display:inline-block;margin-top:4px}
+  .audio-row{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--fg);margin-bottom:8px;cursor:pointer}
+  #micSelect{width:100%;margin-bottom:8px;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:6px}
   .oj-error{margin-top:6px;padding:8px;border:1px solid var(--red);border-radius:6px;background:rgba(248,81,73,.15);color:#ff7b72;font-weight:600}
   .pii-warning{margin-top:6px;padding:8px;border:1px solid #d29922;border-radius:6px;background:rgba(210,153,34,.15);color:#e3b341;font-weight:600}
 </style>
@@ -28,6 +30,9 @@
   <div class="status"><span id="dot" class="dot"></span><span id="state">Idle</span><span id="count" class="count"></span></div>
   <button id="toggle" class="primary">Start recording</button>
   <button id="shot" class="ghost" disabled>📸 Capture screenshot</button>
+  <label class="audio-row"><input type="checkbox" id="audioToggle"> 🎙 Record audio</label>
+  <select id="micSelect" hidden></select>
+  <div class="oj-error" id="micError" hidden></div>
   <div class="hint" id="hint">Records console, network, errors &amp; screenshots on the active tab.</div>
   <script type="module" src="popup.js"></script>
 </body>

@@ -102,3 +102,12 @@ test("tolerates a null report", () => {
   expect(() => buildManifest(null)).not.toThrow();
   expect(buildManifest(null).failures).toEqual([]);
 });
+
+test("includes audio metadata when report.audio is present", () => {
+  const m = buildManifest({ events: [], audio: { dataUrl: "data:audio/webm;base64,AA", mime: "audio/webm;codecs=opus", startWall: 1, durationMs: 4200 } });
+  expect(m.audio).toEqual({ durationMs: 4200, mime: "audio/webm;codecs=opus" });
+});
+test("omits audio key when report.audio is null", () => {
+  const m = buildManifest({ events: [], audio: null });
+  expect(m.audio).toBeUndefined();
+});

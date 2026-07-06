@@ -104,3 +104,30 @@ test("manifest description fits the Chrome Web Store limit (132 chars)", () => {
   // time otherwise (the v0.4.1 description was 146 and blocked the first listing).
   expect(manifest.description.length).toBeLessThanOrEqual(132);
 });
+
+// --- CWS permission justifications ----------------------------------------
+// The dashboard's Privacy practices tab needs a justification for every
+// permission, and there is no API to set them — they're pasted by hand from
+// docs/STORE_LISTING.md. A release that adds a permission without a paste-ready
+// justification stalls in review, so the doc must cover the manifest before a
+// tag ships. A justification is a `**<name>**` header followed by a fenced
+// block with actual content.
+const listing = read("docs/STORE_LISTING.md");
+const hasJustification = (name) => {
+  const esc = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\*\\*${esc}[^\\n]*\\*\\*\\n\`\`\`\\n[^\`]*[^\\s\`]`).test(listing);
+};
+
+test("every manifest permission has a CWS justification in STORE_LISTING.md", () => {
+  const missing = manifest.permissions.filter((p) => !hasJustification(p));
+  if ((manifest.host_permissions ?? []).length && !hasJustification("host permissions")) {
+    missing.push("host permissions");
+  }
+  expect(missing).toEqual([]);
+});
+
+test("justification guard rejects an uncovered or empty block (disconfirming)", () => {
+  expect(hasJustification("notARealPermission")).toBe(false);
+  // A bare header with an empty fence must not count as a justification.
+  expect(new RegExp(`\\*\\*empty[^\\n]*\\*\\*\\n\`\`\`\\n[^\`]*[^\\s\`]`).test("**empty**\n```\n\n```")).toBe(false);
+});

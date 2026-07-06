@@ -1,0 +1,78 @@
+# Audio narration
+
+Part of the [OpenJam feature set](README.md).
+
+## What it does
+
+OpenJam can record **spoken microphone narration** alongside a session, so a bug report can
+carry your voice explaining what you did and what looked wrong — played back in sync with
+the timeline and [session replay](session-replay.md).
+
+It is **opt-in**. In the popup, a "🎙 Record audio" toggle turns it on; when enabled, a mic
+picker (`#micSelect`) lets you choose which microphone to use. Your choice is remembered
+between sessions (`chrome.storage.local` `audioSettings = { enabled, deviceId }`).
+
+Because the MV3 service worker has no DOM (it can't run `getUserMedia`/`MediaRecorder`),
+recording happens in an **offscreen document** (`offscreen.html` / `offscreen.js`) that the
+background worker creates for the duration of a recording and tears down afterwards. The
+offscreen doc records **one continuous `webm/opus` track** for the whole session and hands
+it back to the worker as a base64 data URL. The worker folds it into `report.audio`
+(`{ dataUrl, mime, startWall, durationMs }`), inlined the same way screenshots are.
+
+Playback uses **one player** with **one timeline spanning the longer of the replay and the
+narration** — you usually keep talking after the screen stops changing, and that tail must
+stay reachable. Inside the replay's span the rrweb replayer is the clock and narration
+follows it: play, pause, scrub, and speed move both. Past the replay's end the player holds
+the last frame and a wall clock runs out the narration tail (a tick on the waveform marks
+where on-screen activity ends). Position is `narration = fn(timeline clock)`: `(rrwebStart +
+t) − audioStart`, and the replay highlights the timeline row at the current moment.
+Crucially, the player plays the **decoded audio buffer through Web Audio**
+(`AudioBufferSourceNode`), not an `<audio>` element: MediaRecorder `webm/opus` blobs have no
+reliable duration and aren't seekable, so an element drifts, but a decoded buffer seeks
+sample-accurately via `start(0, offset)`. The same decode feeds the waveform, so decode
+happens once. The player keeps its original scrub bar and adds, only when a track exists, a
+**waveform strip** beneath it — drawn at the narration's true offset and scale on the
+timeline — as a visible cue that narration exists and a second seek surface, a
+**volume/mute** control (a `GainNode`) by the speed buttons, and a **hover-timestamp**
+tooltip over both the scrub bar and the waveform. When there's no replay to drive it, a
+standalone runtime `<audio>` player (`mountAudio`) is shown instead, built at runtime from
+the embedded `#openjam-data` JSON.
+
+## What to expect / limitations
+
+- **Opt-in and local-only.** Off by default; nothing is ever uploaded. The audio lives
+  inside the one exported HTML file and only travels if *you* share that file
+  ([Privacy & data control](privacy.md)).
+- **One continuous track.** A single `audio/webm;codecs=opus` blob per session, not
+  per-clip events. Tab audio is a fast-follow, not in this version.
+- **First-time grant opens a tab.** The first time you enable audio, OpenJam opens a
+  short permission page and Chrome asks "OpenJam wants to use your microphone" — click
+  Allow, then reopen the popup to pick a mic. (The toolbar popup can't show the prompt
+  itself; it loses focus and the prompt dismisses.) The grant persists after that.
+- **Needs the `offscreen` permission.** v1 adds exactly one new permission (`offscreen`)
+  so the offscreen document can run `getUserMedia`/`MediaRecorder`.
+- **Fail-open.** Any audio failure (no mic, permission denied, recorder error) degrades to
+  "no audio" (`report.audio = null`) and never blocks the rest of the capture. Under
+  storage-quota pressure the audio is dropped alongside the replay, in layers.
+- **The `<audio>` is built at runtime**, not baked into the export HTML string — the
+  `data:audio/webm` URL lives once inside the embedded `#openjam-data` JSON, and the player
+  is mounted from it when the report opens.
+- **Names / free-text in the recording are not this feature's concern.** Scrubbing sensitive
+  content is handled separately by redaction, not audio capture.
+
+## Test data
+
+- End-to-end capture→export loop with a fake mic (toggle persistence, offscreen lifecycle,
+  `report.audio` payload, and exactly-one runtime `<audio>` on export, each with a
+  disconfirming case): `e2e/audio.spec.mjs`
+- Deterministic fixture the lanes are driven against (has `#errBtn` and other lane
+  triggers): `test/e2e/fixture.html`
+- Pure sync-math unit tests (`audioTimeFor` / `wallForAudioTime`): `test/audio-sync.test.js`
+
+## Related
+
+- [Session replay](session-replay.md) — the DOM replay the narration plays back in sync with
+- [Data capture](data-capture.md) — the console/network/error lanes on the same timeline
+- [Bug report export](bug-report.md) — how the narration is packaged into one offline file
+- [AI manifest](ai-manifest.md) — records a one-line `audio: { durationMs, mime }` when a track exists
+- [Privacy & data control](privacy.md) — nothing uploaded; you decide what's shared

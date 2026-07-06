@@ -106,6 +106,7 @@ test("accepts batches only from the recorded tab; rejects others with {stop:true
   expect(res.ok).toBe(true);
   const report = store[store.lastReportKey];
   expect(report.rrwebEvents.length).toBe(2); // tab-2 events never entered the session
+  expect(report.audio).toBe(null); // no audioSettings configured → audio lane stays off
 });
 
 test("batches after recording ends are refused (orphaned-recorder guard)", async () => {
