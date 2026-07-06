@@ -197,7 +197,7 @@ replay iframe is ever created), and `build.mjs` bundles the engine directly inst
 - `PHASE_2_PLAN.md` — compressed exports (fflate) for large captures
 - `PHASE_3_PLAN.md` — hybrid CDP pixel keyframes for canvas/WebGL/cross-origin
 - `PHASE_4_PLAN.md` — Firefox/Safari via injection-based capture
-- Audio capture (tab audio / mic narration) on the timeline — requested by first users
+- Tab audio capture on the timeline (mic narration shipped in 0.5.0) — requested by first users
 
 ## Reporting OpenJam bugs
 

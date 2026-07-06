@@ -20,6 +20,7 @@ Hit record, reproduce the bug, and OpenJam captures everything a developer needs
 • Screenshots — at start and stop, automatically on every error, and on demand
 • Device & environment info — browser, OS, viewport, screen size, timezone
 • A full DOM session replay (powered by rrweb) you can scrub through frame by frame
+• Optional mic narration you can hear play back in sync with the replay
 
 Click "Stop & open report" and OpenJam produces a single self-contained HTML file. Open it offline, on any machine, with no extension or account required to view it, and watch the whole session play back next to the timeline. Perfect for attaching to a GitHub issue, Jira ticket, or Slack thread.
 
@@ -70,7 +71,7 @@ English (United States)
 ### Single purpose
 
 ```
-OpenJam records a browser session — console logs, network activity, JavaScript errors, screenshots, device info, and a DOM session replay — on a tab the user chooses, and exports it as a self-contained HTML bug report. Everything stays on the user's machine.
+OpenJam records a browser session — console logs, network activity, JavaScript errors, screenshots, device info, optional microphone narration, and a DOM session replay — on a tab the user chooses, and exports it as a self-contained HTML bug report. Everything stays on the user's machine.
 ```
 
 ### Permission justifications
@@ -95,6 +96,11 @@ A session replay with screenshots routinely exceeds the default ~10 MB local-sto
 Injects OpenJam's rrweb replay recorder into the recorded tab (when the content script isn't already present, e.g. after the extension reloads) to capture the DOM and its mutations for playback. Only on the tab the user chose to record.
 ```
 
+**offscreen**
+```
+The MV3 service worker has no DOM and cannot run getUserMedia/MediaRecorder, so the opt-in microphone-narration feature records in an offscreen document instead. It is created only when the user has enabled "Record audio" and starts a recording, and is closed when the recording stops. The narration is embedded in the local report file; nothing is transmitted.
+```
+
 **host permissions (`<all_urls>`)**
 ```
 Users record bugs on arbitrary websites, so OpenJam needs host access to read the page and inject the recorder on whatever tab they pick. It does nothing on any page until the user explicitly presses Start; no host is touched in the background.
@@ -106,4 +112,6 @@ Users record bugs on arbitrary websites, so OpenJam needs host access to read th
 - Certify all three compliance boxes (no selling, no unrelated use, no unapproved transfer).
 - Privacy policy URL: `https://github.com/SaintPepsi/openjam/blob/main/PRIVACY.md`
 
-> OpenJam transmits nothing — every capture stays on the user's machine.
+> OpenJam transmits nothing — every capture stays on the user's machine. That includes
+> mic narration: opt-in, recorded locally, embedded in the local report file, never
+> collected or transmitted.
