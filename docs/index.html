@@ -985,16 +985,17 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
   var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   /* ---------- relabel the install CTA to the visitor's browser ----------
-     Every Chromium-based browser installs from the same Chrome Web Store
-     link, so keep the href and just rename "Add to Chrome" to the browser
-     they're actually using (e.g. "Add to Vivaldi"). Order matters: Vivaldi,
-     Opera, Edge and Brave all carry "Chrome" in their UA, so match them first.
-     Non-Chromium browsers (Firefox, Safari) can't install CWS extensions —
-     leave the default label; the store page explains it on click. */
+     OpenJam ships only on the Chrome Web Store. Rename "Add to Chrome" to
+     the visitor's browser ONLY where the CWS link installs with no friction:
+     Chrome, Chromium, Vivaldi and Brave. Edge and Opera have their own
+     stores and need extra steps for CWS installs (Edge: "allow extensions
+     from other stores"; Opera: the "Install Chrome Extensions" add-on), and
+     we're not on those stores — so "Add to Edge" would overpromise. They,
+     and non-Chromium browsers, keep the honest "Add to Chrome" label.
+     Order matters: Vivaldi and Brave both carry "Chrome" in their UA. */
   var ua = navigator.userAgent, browser = null;
-  if (/Vivaldi/.test(ua)) browser = "Vivaldi";
-  else if (/OPR\//.test(ua)) browser = "Opera";
-  else if (/Edg\//.test(ua)) browser = "Edge";
+  if (/Edg\//.test(ua) || /OPR\//.test(ua)) browser = null; // own stores — see above
+  else if (/Vivaldi/.test(ua)) browser = "Vivaldi";
   else if (navigator.brave) browser = "Brave";
   else if (/Chromium\//.test(ua)) browser = "Chromium";
   if (browser) {
