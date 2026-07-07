@@ -1066,6 +1066,33 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
       });
     }
 
+    // ----- optional real audio clip: drives playback AND the waveform -----
+    // (an easter egg on the comparison card — press play, hear the clip, and
+    //  the bars are its actual peaks, not the synth envelope)
+    var audioEl = null;
+    if(opts.audioSrc){
+      audioEl = new Audio(opts.audioSrc);
+      audioEl.preload = "auto";
+      audioEl.addEventListener("ended", stop);
+      var AC0 = window.AudioContext || window.webkitAudioContext;
+      if(AC0 && window.fetch){
+        fetch(opts.audioSrc).then(function(r){ return r.arrayBuffer(); })
+          .then(function(buf){ return new AC0().decodeAudioData(buf); })
+          .then(function(audioBuf){
+            var data = audioBuf.getChannelData(0), step = Math.floor(data.length / N) || 1, peak = 0, real = [];
+            for(var i=0;i<N;i++){
+              var mx = 0;
+              for(var j=0;j<step;j++){ var v = Math.abs(data[i*step+j]||0); if(v>mx) mx=v; }
+              real.push(mx); if(mx>peak) peak=mx;
+            }
+            for(var k=0;k<N;k++){
+              env[k] = peak ? Math.max(0.06, real[k]/peak) : env[k];
+              bars[k].style.transform = "scaleY(" + (0.18 + env[k]*0.82).toFixed(3) + ")";
+            }
+          }).catch(function(){});
+      }
+    }
+
     var ctx = null, master = null, playing = false, raf = 0, startAt = 0;
     var playIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5l13 7-13 7z" fill="currentColor"/></svg>';
     var stopIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></svg>';
@@ -1120,8 +1147,14 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
 
     function frame(){
       if(!playing) return;
-      var elapsed = ctx.currentTime - startAt;
-      var p = Math.min(1, elapsed / dur);
+      var elapsed, p;
+      if(audioEl){
+        elapsed = audioEl.currentTime;
+        p = Math.min(1, elapsed / (audioEl.duration || dur));
+      } else {
+        elapsed = ctx.currentTime - startAt;
+        p = Math.min(1, elapsed / dur);
+      }
       // playhead
       ph.style.opacity = "1";
       ph.style.left = (p*100) + "%";
@@ -1142,6 +1175,15 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
     }
 
     function start(){
+      if(audioEl){
+        playing = true;
+        btn.innerHTML = stopIcon;
+        btn.setAttribute("aria-label","Stop clip");
+        try{ audioEl.currentTime = 0; }catch(e){}
+        audioEl.play();
+        raf = requestAnimationFrame(frame);
+        return;
+      }
       ensureCtx();
       if(!ctx){ return; }
       if(ctx.state === "suspended") ctx.resume();
@@ -1155,6 +1197,7 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
     function stop(){
       playing = false;
       cancelAnimationFrame(raf);
+      if(audioEl){ try{ audioEl.pause(); audioEl.currentTime = 0; }catch(e){} }
       if(master){ try{ master.gain.cancelScheduledValues(ctx.currentTime); master.gain.linearRampToValueAtTime(0.0001, ctx.currentTime+0.05);}catch(e){} }
       btn.innerHTML = playIcon;
       btn.setAttribute("aria-label","Play voice narration demo");
@@ -1189,12 +1232,9 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
   ];
   WaveformPlayer({ waveId:"heroWave", playId:"heroPlay", captionId:"heroCaption", words:heroWords, duration:7.2, bars:60 });
 
-  var shiftWords = [
-    {t:0.0,w:"So"},{t:0.3,w:"this"},{t:0.6,w:"only"},{t:0.9,w:"happens"},{t:1.4,w:"on"},{t:1.6,w:"the"},
-    {t:1.85,w:"second"},{t:2.3,w:"save"},{t:2.7,w:"—"},{t:2.95,w:"here,"},{t:3.4,w:"see"},{t:3.7,w:"the"},
-    {t:3.95,w:"toast?"},{t:4.5,w:"That"},{t:4.8,w:"shouldn't"},{t:5.3,w:"fire"},{t:5.7,w:"twice."}
-  ];
-  WaveformPlayer({ waveId:"shiftWave", playId:"shiftPlay", captionId:"shiftCaption", words:shiftWords, duration:6.0, bars:44 });
+  // Easter egg: the comparison card's play button fires the GTA "ah shit, here
+  // we go again" clip, with the waveform drawn from the clip's real peaks.
+  WaveformPlayer({ waveId:"shiftWave", playId:"shiftPlay", words:[], duration:6.0, bars:44, audioSrc:"ah-shit-here-we-go-again.mp3" });
 
   /* ---------- 3D tilt / parallax on the hero popup ---------- */
   (function(){
