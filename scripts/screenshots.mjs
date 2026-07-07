@@ -37,6 +37,13 @@ try {
   const popup = await openPopup(context, extensionId);
   await popup.screenshot({ path: path.join(OUT, "popup-idle.png") });
 
+  // Enable narration through the real toggle so the shots show the checked box
+  // and mic picker, and the recording carries audio → the viewer waveform strip.
+  // The harness launches with --use-fake-device-for-media-stream (a synthetic
+  // tone) + auto-granted mic, so this records a real, decodable clip — no device.
+  await popup.locator("#audioToggle").check();
+  await popup.locator("#micSelect:not([hidden])").waitFor();
+
   const tabId = await tabIdOf(popup, fixtureServer.url);
   const started = await sendAction(popup, { action: "start", tabId });
   if (!started.ok) throw new Error("start failed: " + started.error);
@@ -57,7 +64,12 @@ try {
   const viewer = await stopAndOpenViewer(context, popup);
   await viewer.locator(".row").first().waitFor();
   await viewer.locator("#replay .replayer-wrapper").waitFor();
-  await viewer.waitForTimeout(500); // replay first frame
+  const waveform = viewer.locator("#replay .oj-waveform"); // narration → waveform strip
+  await waveform.waitFor();
+  await viewer.waitForTimeout(800); // replay first frame + waveform peaks paint
+  // The waveform sits under the scrub bar, below the 800px store-listing crop —
+  // scroll the player controls into view so the shot shows the audio feature.
+  await waveform.scrollIntoViewIfNeeded();
   await viewer.screenshot({ path: path.join(OUT, "viewer.png") });
 
   await viewer.locator(".row", { hasText: "counter is now" }).first().click();
