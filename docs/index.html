@@ -179,7 +179,7 @@ section{position:relative}
 .narr-tag{margin-left:auto; font-family:var(--mono); font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--dim); border:1px solid var(--line); padding:3px 7px; border-radius:20px}
 .wave{position:relative; display:flex; align-items:center; gap:2px; height:52px; padding:0 2px;
   background:var(--bg); border:1px solid var(--line); border-radius:8px; overflow:hidden}
-.wave .bar{flex:1 1 0; min-width:2px; border-radius:2px; background:#2f3846; transform:scaleY(.28); transform-origin:center;
+.wave .bar{flex:1 1 0; min-width:2px; height:100%; border-radius:2px; background:#2f3846; transform:scaleY(.28); transform-origin:center;
   transition:background .12s linear}
 .wave .bar.on{background:var(--accent)}
 .wave .ph{position:absolute; top:0; bottom:0; width:2px; background:rgba(255,255,255,.85); box-shadow:0 0 8px rgba(110,168,254,.9); left:0; opacity:0; border-radius:2px}
@@ -383,7 +383,7 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
             <button class="play" id="shiftPlay" aria-label="Play the narrated repro">
               <svg viewBox="0 0 24 24" aria-hidden="true" class="ic-play"><path d="M7 5l13 7-13 7z" fill="currentColor"/></svg>
             </button>
-            <span class="narr-label">Play the reviewer's-eye view</span>
+            <span class="narr-label">Play the narrated repro</span>
           </div>
           <div class="wave" id="shiftWave" role="img" aria-label="Narration waveform"></div>
         </div>
