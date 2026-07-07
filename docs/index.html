@@ -206,9 +206,6 @@ section{position:relative}
 .b-console{background:#22303f;color:var(--accent)} .b-network{background:#2b2440;color:var(--violet)}
 .b-error{background:#3a1f23;color:var(--red)} .b-shot{background:#1f3a2a;color:var(--green)}
 .row .s{color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-.row.audio{background:var(--audio); box-shadow:inset 3px 0 0 var(--accent); border-color:transparent}
-.row.audio .b{background:rgba(110,168,254,.2); color:var(--accent)}
-.row.audio .s{color:var(--fg)}
 .think{margin-top:auto; padding-top:14px; border-top:1px dashed var(--line); font-size:14.5px; font-style:italic; color:var(--dim)}
 .after .think{color:var(--fg); font-style:normal; border-top-color:rgba(110,168,254,.25)}
 
@@ -321,7 +318,7 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
       <a class="gh" href="https://github.com/SaintPepsi/openjam" target="_blank" rel="noopener">GitHub</a>
     </nav>
     <a class="btn btn-primary" href="https://chromewebstore.google.com/detail/openjam/oljdbmjhfjnhnpjcehcnkbbjdgnpjdaj" target="_blank" rel="noopener">
-      <span class="chrome" aria-hidden="true"></span> Add to Chrome
+      <span class="chrome" aria-hidden="true"></span> <span class="cta-label">Add to Chrome</span>
     </a>
   </div>
 </header>
@@ -336,7 +333,7 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
     <p class="lead reveal d2">Capture it, talk through it out loud, share one HTML file &mdash; and nothing ever leaves your machine.</p>
     <div class="hero-cta reveal d2">
       <a class="btn btn-primary" href="https://chromewebstore.google.com/detail/openjam/oljdbmjhfjnhnpjcehcnkbbjdgnpjdaj" target="_blank" rel="noopener">
-        <span class="chrome" aria-hidden="true"></span> Add to Chrome
+        <span class="chrome" aria-hidden="true"></span> <span class="cta-label">Add to Chrome</span>
       </a>
       <a class="btn btn-ghost" href="https://github.com/SaintPepsi/openjam" target="_blank" rel="noopener">View source</a>
     </div>
@@ -378,7 +375,6 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
         <div class="shift-tag"><span class="pip"></span>Narrated repro</div>
         <div class="rows" aria-hidden="true">
           <div class="row"><span class="b b-console">log</span><span class="s">clicked #save-btn</span></div>
-          <div class="row audio"><span class="b">mic</span><span class="s">"Watch — I only clicked once…"</span></div>
           <div class="row"><span class="b b-network">net</span><span class="s">POST /api/save → 200</span></div>
           <div class="row"><span class="b b-network">net</span><span class="s">POST /api/save → 200</span></div>
         </div>
@@ -528,7 +524,7 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
       <p>Add OpenJam to Chrome and your next repro stays exactly where you left it — on your machine, in one file, in your voice.</p>
       <div class="hero-cta">
         <a class="btn btn-primary" href="https://chromewebstore.google.com/detail/openjam/oljdbmjhfjnhnpjcehcnkbbjdgnpjdaj" target="_blank" rel="noopener">
-          <span class="chrome" aria-hidden="true"></span> Add to Chrome
+          <span class="chrome" aria-hidden="true"></span> <span class="cta-label">Add to Chrome</span>
         </a>
         <a class="btn btn-ghost" href="https://github.com/SaintPepsi/openjam" target="_blank" rel="noopener">Star it on GitHub</a>
       </div>
@@ -987,6 +983,24 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
 (function(){
   "use strict";
   var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ---------- relabel the install CTA to the visitor's browser ----------
+     Every Chromium-based browser installs from the same Chrome Web Store
+     link, so keep the href and just rename "Add to Chrome" to the browser
+     they're actually using (e.g. "Add to Vivaldi"). Order matters: Vivaldi,
+     Opera, Edge and Brave all carry "Chrome" in their UA, so match them first.
+     Non-Chromium browsers (Firefox, Safari) can't install CWS extensions —
+     leave the default label; the store page explains it on click. */
+  var ua = navigator.userAgent, browser = null;
+  if (/Vivaldi/.test(ua)) browser = "Vivaldi";
+  else if (/OPR\//.test(ua)) browser = "Opera";
+  else if (/Edg\//.test(ua)) browser = "Edge";
+  else if (navigator.brave) browser = "Brave";
+  else if (/Chromium\//.test(ua)) browser = "Chromium";
+  if (browser) {
+    var labels = document.querySelectorAll(".cta-label");
+    for (var i = 0; i < labels.length; i++) labels[i].textContent = "Add to " + browser;
+  }
 
   /* ---------- nav shadow on scroll ---------- */
   var nav = document.getElementById("nav");
