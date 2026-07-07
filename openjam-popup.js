@@ -85,7 +85,7 @@
     "  background:var(--oj-bg); border:1px solid var(--oj-line); border-radius:11px; padding:12px 13px; margin-bottom:8px;",
     "  color:var(--oj-fg); font-size:14px; font-weight:600; font-family:var(--oj-sans); cursor:pointer;",
     "  transition:border-color .16s ease, background .16s ease, transform .1s ease}",
-    ".row:hover{border-color:#3a4render}", /* placeholder replaced below */
+    ".row:not(.primary):hover{border-color:#3a4252; background:#141922}",
     ".row .ic{width:18px; height:18px; flex:0 0 auto; display:grid; place-items:center}",
     ".ic svg{width:16px; height:16px; stroke:var(--oj-accent); stroke-width:2; fill:none; stroke-linecap:round; stroke-linejoin:round}",
     ".row.primary{background:var(--oj-accent); color:var(--oj-accent-ink); border-color:transparent; justify-content:center; font-weight:700}",
@@ -162,9 +162,7 @@
     "    <div class='hint'>Records console, network, errors &amp; a full session replay on the active tab.</div>",
     "  </div>",
     "</div>"
-  ].join("")
-    // fix the hover placeholder cleanly
-    .replace(".row:hover{border-color:#3a4render}", ".row:not(.primary):hover{border-color:#3a4252; background:#141922}");
+  ].join("");
 
   var METER_BARS = 40;
 
@@ -185,6 +183,7 @@
       var r = this.shadowRoot;
       this._elToggle = r.querySelector("[data-act=toggle]");
       this._elToggleT = r.querySelector(".row.primary .t");
+      this._elIcon = r.querySelector(".row.primary .ic");
       this._elMicHead = r.querySelector("[data-act=mic]");
       this._elMicSub = r.querySelector(".mic-sub");
       this._elSelect = r.querySelector("select");
@@ -222,6 +221,8 @@
 
     disconnectedCallback() {
       cancelAnimationFrame(this._raf);
+      cancelAnimationFrame(this._feedRaf);
+      cancelAnimationFrame(this._tiltRaf);
       if (this._demoTimer) clearInterval(this._demoTimer);
       if (this._audio) { try { this._audio.close(); } catch (e) {} }
       if (this._tiltHandler) window.removeEventListener("mousemove", this._tiltHandler);
@@ -278,7 +279,6 @@
     _onMic() {
       var next = !this.micEnabled;
       this.micEnabled = next;
-      this._elMicHead.setAttribute("aria-checked", String(next));
       this._syncLabels();
       this._emit("oj-mic-toggle", { enabled: next });
       if (this.hasAttribute("demo")) this._demoMic(next);
@@ -289,8 +289,7 @@
       this._elMicHead.setAttribute("aria-checked", String(this.micEnabled));
       var rec = this.recording;
       this._elToggleT.textContent = rec ? "Stop & open report" : "Start recording";
-      var icon = this.shadowRoot.querySelector(".row.primary .ic");
-      icon.innerHTML = rec
+      this._elIcon.innerHTML = rec
         ? "<svg viewBox='0 0 24 24' aria-hidden='true'><rect x='6' y='6' width='12' height='12' rx='2' fill='currentColor' stroke='none'/></svg>"
         : "<span class='dotr'></span>";
       this._elStLbl.textContent = rec ? "REC" : "Idle";
@@ -315,11 +314,14 @@
 
     _loop() {
       var render = () => {
-        // decay levels slightly toward a target for smoothness
-        for (var i = 0; i < METER_BARS; i++) {
-          var v = this._levels[i] || 0;
-          this._bars[i].style.transform = "scaleY(" + (0.12 + v * 0.88).toFixed(3) + ")";
-          this._bars[i].style.opacity = (0.45 + v * 0.55).toFixed(2);
+        // The meter only shows while recording with mic on; skip the invisible
+        // 40-bar repaint otherwise so an idle popup isn't working every frame.
+        if (this.recording && this.micEnabled) {
+          for (var i = 0; i < METER_BARS; i++) {
+            var v = this._levels[i] || 0;
+            this._bars[i].style.transform = "scaleY(" + (0.12 + v * 0.88).toFixed(3) + ")";
+            this._bars[i].style.opacity = (0.45 + v * 0.55).toFixed(2);
+          }
         }
         this._raf = requestAnimationFrame(render);
       };
@@ -330,7 +332,6 @@
     _startDemo() {
       this.recording = true;
       this.micEnabled = true;
-      this._elMicHead.setAttribute("aria-checked", "true");
       this.setMics([{ id: "default", label: "MacBook Pro Microphone" }, { id: "ext", label: "External USB Mic" }], "default");
       this._elapsed = 14000;
       this._syncLabels();
