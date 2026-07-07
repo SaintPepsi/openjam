@@ -69,7 +69,13 @@ export async function openPopup(context, extensionId) {
   const popup = await context.newPage();
   await popup.setViewportSize({ width: 360, height: 440 });
   await popup.goto(`chrome-extension://${extensionId}/popup.html`);
-  await popup.locator("#toggle").waitFor();
+  // The control surface is now the <openjam-popup> custom element. Wait for it to
+  // upgrade (shadow DOM populated) so the page — and its runtime messaging — is live.
+  await popup.locator("openjam-popup").waitFor();
+  await popup.waitForFunction(() => {
+    const el = document.querySelector("openjam-popup");
+    return !!el?.shadowRoot?.querySelector("button");
+  });
   return popup;
 }
 

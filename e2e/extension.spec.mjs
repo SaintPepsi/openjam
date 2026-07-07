@@ -217,25 +217,28 @@ test("restricted pages fail with a reportable error", async () => {
   // advice rather than a raw CDP error like "Cannot access a chrome:// URL".
   expect(res.error).toContain("only record normal web pages");
 
-  // The popup's failure branch (popup.js toggle handler) renders the error
-  // with a GitHub issue link and the PII warning.
+  // The popup's failure branch (popup.js toggle handler) builds the error HTML
+  // with renderErrorReport and hands it to the component's showError notice —
+  // GitHub issue link + PII warning included. Mirror that exact wiring here.
   await popup.evaluate(async (error) => {
     const { renderErrorReport } = await import("./issue-link.js");
-    renderErrorReport(document.getElementById("hint"), error, {
+    const tmp = document.createElement("div");
+    renderErrorReport(tmp, error, {
       version: chrome.runtime.getManifest().version,
       userAgent: navigator.userAgent,
     });
+    document.getElementById("oj").showError(tmp.innerHTML);
   }, res.error);
-  await expect(popup.locator("#hint a")).toHaveAttribute(
+  await expect(popup.locator("openjam-popup .err a")).toHaveAttribute(
     "href",
     /github\.com\/SaintPepsi\/openjam\/issues\/new/,
   );
-  await expect(popup.locator(".pii-warning")).toContainText("remove any PII");
+  await expect(popup.locator("openjam-popup .pii-warning")).toContainText("remove any PII");
   // The failure renders as a red error callout, not gray hint text. Visual
-  // baseline of the whole hint region (error box + report link + PII warning);
+  // baseline of the notice region (error box + report link + PII warning);
   // its text is static, so the snapshot is deterministic across runs.
-  await expect(popup.locator("#hint .oj-error")).toBeVisible();
-  await expect(popup.locator("#hint")).toHaveScreenshot("popup-error-callout.png");
+  await expect(popup.locator("openjam-popup .err .oj-error")).toBeVisible();
+  await expect(popup.locator("openjam-popup .err")).toHaveScreenshot("popup-error-callout.png");
   await restricted.close();
   await popup.close();
 });

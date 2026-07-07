@@ -41,8 +41,9 @@ try {
   // and mic picker, and the recording carries audio → the viewer waveform strip.
   // The harness launches with --use-fake-device-for-media-stream (a synthetic
   // tone) + auto-granted mic, so this records a real, decodable clip — no device.
-  await popup.locator("#audioToggle").check();
-  await popup.locator("#micSelect:not([hidden])").waitFor();
+  await popup.locator("[data-act=mic]").click();
+  await popup.locator("[data-act=mic][aria-checked=true]").waitFor();
+  await popup.locator("openjam-popup select").waitFor(); // mic picker revealed
 
   const tabId = await tabIdOf(popup, fixtureServer.url);
   const started = await sendAction(popup, { action: "start", tabId });
@@ -58,7 +59,7 @@ try {
 
   // The popup polls getStatus every second; wait for it to show recording.
   await popup.bringToFront();
-  await popup.locator("#toggle", { hasText: "Stop & open report" }).waitFor();
+  await popup.locator("openjam-popup [data-act=toggle]", { hasText: "Stop & open report" }).waitFor();
   await popup.screenshot({ path: path.join(OUT, "popup-recording.png") });
 
   const viewer = await stopAndOpenViewer(context, popup);

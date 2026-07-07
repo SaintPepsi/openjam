@@ -13,7 +13,7 @@
     "eval": "node eval/build-reports.mjs && node eval/run-eval.mjs",
     "screenshots": "node scripts/screenshots.mjs",
     "icons": "node scripts/icons.mjs",
-    "package": "npm run build && zip -r openjam.zip manifest.json LICENSE background.js event-kinds.js manifest.js issue-link.js popup.html popup.js viewer.html viewer.js renderer.js report-builder.js audio-sync.js offscreen.html offscreen.js mic-permission.html mic-permission.js icons dist src/generated"
+    "package": "npm run build && zip -r openjam.zip manifest.json LICENSE background.js event-kinds.js manifest.js issue-link.js popup.html popup.js openjam-popup.js viewer.html viewer.js renderer.js report-builder.js audio-sync.js offscreen.html offscreen.js mic-permission.html mic-permission.js icons dist src/generated"
   },
   "repository": {
     "type": "git",

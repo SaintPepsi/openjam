@@ -82,10 +82,10 @@ test("audio toggle persists across popup reopen", async () => {
   const popup = await openPopup(context, extensionId);
   await clearAudioSettings(popup);
 
-  // Checking the box grants the (fake) mic, saves audioSettings.enabled=true,
+  // Toggling the mic switch grants the (fake) mic, saves audioSettings.enabled=true,
   // and reveals the mic picker. --use-fake-ui-for-media-stream auto-accepts.
-  await popup.locator("#audioToggle").check();
-  await expect(popup.locator("#audioToggle")).toBeChecked();
+  await popup.locator("[data-act=mic]").click();
+  await expect(popup.locator("[data-act=mic]")).toHaveAttribute("aria-checked", "true");
   // First interaction on a freshly-launched service worker: the async change
   // handler (getUserMedia + enumerateDevices + storage.set) can lag while the
   // SW warms up, so give this poll extra headroom.
@@ -93,7 +93,7 @@ test("audio toggle persists across popup reopen", async () => {
 
   await popup.close();
   const reopened = await openPopup(context, extensionId);
-  await expect(reopened.locator("#audioToggle")).toBeChecked();
+  await expect(reopened.locator("[data-act=mic]")).toHaveAttribute("aria-checked", "true");
   expect((await getAudioSettings(reopened))?.enabled).toBe(true);
   await reopened.close();
 });
@@ -104,8 +104,10 @@ test("[disconfirming] fresh context: toggle unchecked and mic picker hidden", as
   await popup.close();
 
   const fresh = await openPopup(context, extensionId);
-  await expect(fresh.locator("#audioToggle")).not.toBeChecked();
-  await expect(fresh.locator("#micSelect")).toHaveAttribute("hidden", "");
+  await expect(fresh.locator("[data-act=mic]")).toHaveAttribute("aria-checked", "false");
+  // Without [mic] on the host the picker stays collapsed (max-height:0) — the
+  // component's way of hiding the mic list.
+  expect(await fresh.locator("openjam-popup").evaluate((el) => el.hasAttribute("mic"))).toBe(false);
   await fresh.close();
 });
 
