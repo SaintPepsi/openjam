@@ -217,28 +217,36 @@ test("restricted pages fail with a reportable error", async () => {
   // advice rather than a raw CDP error like "Cannot access a chrome:// URL".
   expect(res.error).toContain("only record normal web pages");
 
-  // The popup's failure branch (popup.js toggle handler) builds the error HTML
-  // with renderErrorReport and hands it to the component's showError notice —
-  // GitHub issue link + PII warning included. Mirror that exact wiring here.
+  // The popup's failure branch (popup.js showFailure) splits renderErrorReport's
+  // output across the component's TWO notice slots: the error + GitHub link go to
+  // showError (red box), the PII warning to showPii (gold box). Mirror that here.
   await popup.evaluate(async (error) => {
     const { renderErrorReport } = await import("./issue-link.js");
+    const oj = document.getElementById("oj");
     const tmp = document.createElement("div");
     renderErrorReport(tmp, error, {
       version: chrome.runtime.getManifest().version,
       userAgent: navigator.userAgent,
     });
-    document.getElementById("oj").showError(tmp.innerHTML);
+    const pii = tmp.querySelector(".pii-warning");
+    const piiText = pii ? pii.textContent : "";
+    if (pii) pii.remove();
+    oj.showError(tmp.innerHTML);
+    oj.showPii(piiText);
   }, res.error);
   await expect(popup.locator("openjam-popup .err a")).toHaveAttribute(
     "href",
     /github\.com\/SaintPepsi\/openjam\/issues\/new/,
   );
-  await expect(popup.locator("openjam-popup .pii-warning")).toContainText("remove any PII");
+  // The PII warning is its OWN gold notice, not fused into the red error box.
+  await expect(popup.locator("openjam-popup .pii")).toContainText("remove any PII");
+  await expect(popup.locator("openjam-popup .err .pii-warning")).toHaveCount(0);
   // The failure renders as a red error callout, not gray hint text. Visual
-  // baseline of the notice region (error box + report link + PII warning);
-  // its text is static, so the snapshot is deterministic across runs.
-  await expect(popup.locator("openjam-popup .err .oj-error")).toBeVisible();
-  await expect(popup.locator("openjam-popup .err")).toHaveScreenshot("popup-error-callout.png");
+  // baseline of both notices (red error + link, then separate gold PII box);
+  // the text is static, so the snapshot is deterministic across runs.
+  await expect(popup.locator("openjam-popup .err")).toBeVisible();
+  await expect(popup.locator("openjam-popup .pii")).toBeVisible();
+  await expect(popup.locator("openjam-popup .card")).toHaveScreenshot("popup-error-callout.png");
   await restricted.close();
   await popup.close();
 });

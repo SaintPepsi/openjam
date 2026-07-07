@@ -14,12 +14,18 @@ async function activeTabId() {
   return tab?.id;
 }
 
-// renderErrorReport writes markup (with the "Report on GitHub" link) into an element;
-// capture that HTML and hand it to the component's notice slot.
-function errorHtml(error) {
+// renderErrorReport bundles the error callout + "Report on GitHub" link AND the
+// PII warning into one container. The component has two distinct notice slots —
+// a red error box and a gold PII box — so split them: error + link go to
+// showError, the PII warning to showPii. Keeps them visually separate.
+function showFailure(error) {
   const tmp = document.createElement("div");
   renderErrorReport(tmp, error, ENV);
-  return tmp.innerHTML;
+  const pii = tmp.querySelector(".pii-warning");
+  const piiText = pii ? pii.textContent : "";
+  if (pii) pii.remove();
+  oj.showError(tmp.innerHTML);
+  oj.showPii(piiText);
 }
 
 /* ---------------- record / stop ---------------- */
@@ -28,11 +34,11 @@ oj.addEventListener("oj-toggle", async () => {
   const status = await send("getStatus");
   if (status.recording) {
     const res = await send("stop");
-    if (!res.ok) oj.showError(errorHtml(res.error));
+    if (!res.ok) showFailure(res.error);
     else { window.close(); return; }        // report opens in a new tab, popup closes
   } else {
     const res = await send("start", { tabId: await activeTabId() });
-    if (!res.ok) oj.showError(errorHtml(res.error));
+    if (!res.ok) showFailure(res.error);
   }
   await refresh();
 });
