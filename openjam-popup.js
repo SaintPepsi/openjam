@@ -240,6 +240,7 @@
       s = s || {};
       if ("recording" in s) this.recording = !!s.recording;
       if ("eventCount" in s && s.eventCount != null) this._eventCount = s.eventCount;
+      if (this._elToggle) this._elToggle.disabled = false; // round-trip settled: release the re-entrancy guard
       this._syncLabels();
     }
 
@@ -270,10 +271,16 @@
     }
 
     _onToggle() {
+      // Re-entrancy guard: ignore a second toggle while a start/stop round-trip
+      // is in flight. The button's disabled state IS the flag; setStatus clears
+      // it once the host's round-trip settles. Demo has no host, so it clears
+      // synchronously below.
+      if (this._elToggle.disabled) return;
+      this._elToggle.disabled = true;
       // In live mode the host flips state (via setStatus after chrome round-trip).
       // In demo mode we own the state.
       this._emit("oj-toggle", { recording: !this.recording });
-      if (this.hasAttribute("demo")) this._demoToggle();
+      if (this.hasAttribute("demo")) { this._demoToggle(); this._elToggle.disabled = false; }
     }
 
     _onMic() {

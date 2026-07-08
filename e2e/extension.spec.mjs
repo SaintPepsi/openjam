@@ -265,3 +265,40 @@ test("storage keeps only the newest report", async () => {
   expect(reportKeys).toHaveLength(1);
   await popup.close();
 });
+
+test("double-click on the record toggle starts exactly one recording, no error", async () => {
+  // The re-entrancy guard (openjam-popup _onToggle) must absorb a second click
+  // that lands during the async start round-trip. Without it, the second click
+  // fires a second start against the same tab and the user gets a red error
+  // over a recording that started fine (docs/popup-redesign-fixes/01).
+
+  // A recordable page must be the active tab so the toggle's start() resolves a
+  // real tabId (popup.js activeTabId → chrome.tabs.query active), not the
+  // extension page. bringToFront makes the fixture active; clicking the toggle
+  // via the element (not Playwright's mouse) keeps it that way.
+  const fixture = await context.newPage();
+  await fixture.goto(fixtureServer.url, { waitUntil: "load" });
+  const popup = await openPopup(context, extensionId);
+  await fixture.bringToFront();
+
+  // Two clicks dispatched synchronously with no await between — the exact
+  // interleaving the guard exists to handle.
+  await popup.evaluate(() => {
+    const btn = document
+      .querySelector("openjam-popup")
+      .shadowRoot.querySelector("[data-act=toggle]");
+    btn.click();
+    btn.click();
+  });
+
+  // Exactly one recording is live...
+  await expect
+    .poll(() => sendAction(popup, { action: "getStatus" }).then((s) => s.recording))
+    .toBe(true);
+  // ...and the second click produced no error notice.
+  await expect(popup.locator("openjam-popup .err")).toBeHidden();
+
+  await sendAction(popup, { action: "stop" }); // finalize so state doesn't leak
+  await fixture.close();
+  await popup.close();
+});
