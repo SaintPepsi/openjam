@@ -6,3 +6,4 @@ src/generated/
 openjam.zip
 test-results/
 eval/out/
+.gate/
