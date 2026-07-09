@@ -16,17 +16,32 @@ The rewrite deleted the `📸 Capture screenshot` button with no replacement:
 
 A shipped v0.5.0 feature is unreachable from the UI while its docs advertise it.
 
+## Decision (Ian, 2026-07-09)
+
+No manual screenshot control in the popup. Automatic capture stays as is —
+start, stop, and on-error (`background.js:402/411/270`) — which is enough visual
+timeline for a bug report. This is neither "restore the button" nor the ticket's
+original "delete the handler" removal branch: the `screenshot` action handler is
+retained because automation depends on it.
+
 ## Fix
 
-Add a screenshot control to `<openjam-popup>` (visible while recording, emits
-`oj-screenshot`; host sends the existing `screenshot` action). If removal was
-intentional instead: delete the `background.js:577` handler and update
-`docs/feature-set/screenshots.md` in the same PR — code, docs, and UI must agree.
+1. Ratify that `<openjam-popup>` has no screenshot control (it already doesn't;
+   the only button is `data-act="toggle"`).
+2. Keep the `background.js:577` `screenshot` action handler. Do **not** delete
+   it: the e2e drives it (`e2e/extension.spec.mjs:56`,
+   `sendAction(popup, { action: "screenshot" })`) and so does
+   `scripts/screenshots.mjs`. It is automation-facing, not user-facing.
+3. Reconcile `docs/feature-set/screenshots.md`: drop the "on demand while
+   recording" bullet so code, docs, and UI agree. Start/stop + on-error stay.
 
 ## Acceptance criteria
 
-- e2e: while recording, click the new control, stop, and assert the report
-  contains a manual screenshot event (fixture flow as in `e2e/extension.spec.mjs`).
-  Command: `npx playwright test e2e/extension.spec.mjs -g "manual screenshot"` → passing.
-- Disconfirming input: comment out the `oj-screenshot` host wiring → test fails.
-- `docs/feature-set/screenshots.md` matches the shipped UI (quote the updated line in the PR).
+- No screenshot control in the component:
+  `grep -n "data-act" openjam-popup.js` → only `toggle` and `mic`, no capture control.
+- Auto-capture intact: `npx playwright test e2e/extension.spec.mjs -g "captures console, network and screenshots"` → passing (it asserts ≥2 screenshot rows from the start + manual-via-automation captures).
+- Handler retained, and its retention is load-bearing. Disconfirming input:
+  delete the `background.js:577` `screenshot` case → the e2e above fails on the
+  screenshot-row assertion. Paste the failing output, then restore.
+- `docs/feature-set/screenshots.md` matches the shipped UI: quote the updated
+  bullet list (no "on demand" line) in the PR.

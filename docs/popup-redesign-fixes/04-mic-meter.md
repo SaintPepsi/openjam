@@ -11,24 +11,44 @@ extension ever calls it. The wiring exists only as a commented-out sketch
 "listening…" and reasonably concludes their mic isn't captured.
 
 Cost on top: the meter's `requestAnimationFrame` loop runs unconditionally for
-the component's lifetime (`openjam-popup.js:315`), rewriting transform/opacity
-on 40 bars even when nothing changes — every open popup burns ~60 wakeups/sec.
+the component's lifetime (`openjam-popup.js:336`, `_loop`), rewriting
+transform/opacity on 40 bars even when nothing changes — every open popup burns
+~60 wakeups/sec.
+
+## Decision (Ian, 2026-07-09)
+
+Gate, don't wire. Mic capture already works end to end — narration records to
+the report and the replay exposes a volume control
+(`test/e2e/audio.spec.mjs`: "audio-enabled recording writes report.audio with a
+webm data URL", "replay player with audio renders a waveform, volume control").
+The level meter is only a live *input-level* animation, separate from capture,
+and wiring a real feed is not worth it right now. So hide the meter in the live
+popup rather than feed it; a follow-up can wire it if the reassurance is ever
+wanted.
 
 ## Fix
 
-Either wire it (emit rms from the offscreen capture path as a `micLevel`
-message and uncomment the `popup.js:101` listener), or gate the meter row and
-hint behind the `[demo]` attribute until a real feed exists. Both ways: start
-the rAF loop only when the meter is visible and data is arriving, stop it
-otherwise.
+Gate the meter row and the "listening…" hint behind the `[demo]` attribute: the
+marketing demo keeps its synthetic animation, the live extension popup shows
+neither (no permanently flat meter reading as "mic dead"). Mic toggle + device
+picker are unaffected. Because 05b landed, flow the visibility through
+`_render` / `:host` state, not an imperative poke. Start the `_loop` rAF only
+when the meter can animate (i.e. `[demo]`); it must not run in the live popup.
+
+Do **not** wire the offscreen feed or uncomment the `popup.js:101` listener —
+that is the deferred follow-up, out of scope here.
 
 ## Acceptance criteria
 
-- If wired: e2e with `--use-fake-device-for-media-stream` (already used by
-  `scripts/screenshots.mjs:40-43`), record with mic on, assert at least one
-  meter bar mutates its style within 2s. Command + passing output in the PR.
-- If gated: e2e asserts the meter row is absent in the extension popup while
-  recording with mic on, and present on the landing demo.
-- Disconfirming input: sever the feed (or remove the gate) → the test fails.
-- rAF check: with the popup open and idle, no per-frame style writes — cite the
-  guard added around `openjam-popup.js:315` as `file:line` in the PR.
+- Meter gated to demo: e2e asserts the meter row has zero bounding-box height in
+  the live extension popup while recording with mic on, and non-zero height with
+  the `[demo]` attribute set (assert height, not presence — collapsed shadow
+  content still passes visibility checks, per `e2e/CLAUDE.md`). Command + passing
+  output in the PR.
+- Disconfirming input: remove the `[demo]` gate (show the meter in live) → the
+  zero-height assertion fails. Paste the failing output.
+- rAF check: with the live popup open and recording with mic on, no per-frame
+  style writes occur (the `_loop` rAF is not running) — cite the guard as
+  `file:line` in the PR.
+- No feed wired: `grep -n "micLevel" popup.js` shows the listener still
+  commented, confirming input capture was left for the follow-up.
