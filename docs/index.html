@@ -701,7 +701,6 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
       cancelAnimationFrame(this._feedRaf);
       cancelAnimationFrame(this._tiltRaf);
       if (this._demoTimer) clearInterval(this._demoTimer);
-      if (this._audio) { try { this._audio.close(); } catch (e) {} }
       if (this._tiltHandler) window.removeEventListener("mousemove", this._tiltHandler);
     }
 
@@ -845,39 +844,7 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
     _demoMic(on) {
       // clear meter quickly when turned off
       if (!on) this._levels = new Array(METER_BARS).fill(0);
-      // a gentle audible demo when the user turns the mic ON (a real gesture)
-      if (on && !this._reduce) this._playDemoAudio();
       this._syncLabels();
-    }
-
-    _playDemoAudio() {
-      try {
-        var AC = window.AudioContext || window.webkitAudioContext;
-        if (!AC) return;
-        if (!this._audio) this._audio = new AC();
-        var ctx = this._audio;
-        if (ctx.state === "suspended") ctx.resume();
-        var t0 = ctx.currentTime + 0.02, dur = 3.4;
-        var master = ctx.createGain(); master.gain.value = 0.0001; master.connect(ctx.destination);
-        var osc = ctx.createOscillator(); osc.type = "sawtooth"; osc.frequency.value = 116;
-        var lfo = ctx.createOscillator(); lfo.frequency.value = 5.2;
-        var lfoG = ctx.createGain(); lfoG.gain.value = 6; lfo.connect(lfoG); lfoG.connect(osc.frequency);
-        var lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 900;
-        var vg = ctx.createGain(); vg.gain.value = 0;
-        osc.connect(lp); lp.connect(vg); vg.connect(master);
-        var g = vg.gain; g.setValueAtTime(0.0001, t0);
-        for (var i = 0; i < 24; i++) {
-          var tt = t0 + (i / 24) * dur;
-          var e = Math.max(0.05, Math.pow(Math.abs(Math.sin(i * 0.9)), 1.4));
-          g.linearRampToValueAtTime(0.0001 + e * 0.9, tt);
-        }
-        g.linearRampToValueAtTime(0.0001, t0 + dur);
-        master.gain.setValueAtTime(0.0001, t0);
-        master.gain.linearRampToValueAtTime(0.08, t0 + 0.1);
-        master.gain.setValueAtTime(0.08, t0 + dur - 0.15);
-        master.gain.linearRampToValueAtTime(0.0001, t0 + dur);
-        osc.start(t0); lfo.start(t0); osc.stop(t0 + dur + 0.05); lfo.stop(t0 + dur + 0.05);
-      } catch (e) {}
     }
 
     /* ---------- 3D tilt (marketing hero) ---------- */
