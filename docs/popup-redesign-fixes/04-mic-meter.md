@@ -1,6 +1,6 @@
 # 04 — Wire or gate the mic level meter
 
-Depends on: [00-epic](00-epic.md)
+Depends on: [00-epic](00-epic.md), [05](05-component-source-of-truth.md), [05b](05b-render-from-state.md)
 
 ## Problem
 

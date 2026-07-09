@@ -1,6 +1,6 @@
 # 06 — Fix inert demo stop button
 
-Depends on: [00-epic](00-epic.md), [05](05-component-source-of-truth.md)
+Depends on: [00-epic](00-epic.md), [05](05-component-source-of-truth.md), [05b](05b-render-from-state.md)
 
 ## Problem
 

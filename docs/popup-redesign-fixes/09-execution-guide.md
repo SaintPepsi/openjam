@@ -12,8 +12,11 @@ ways; every rule below maps to a known failure mode.
 ## Session protocol
 
 - **One ticket per session, per branch.** Fresh context beats a long session
-  carrying seven tickets of stale state. Order: 05 before 06 (mandatory,
-  see [06-demo-toggle.md](06-demo-toggle.md)); everything else independent.
+  carrying seven tickets of stale state. Order: **05 before every
+  component-editing ticket** (01, 02, 03, 04, 06); **05b before the
+  display-changing ones** (01, 03, 04, 06); 07 and 08 independent. Running a
+  component ticket before 05 forces the fix into two copies — that already
+  happened once with 01 (see [00-epic.md](00-epic.md), Dependencies).
 - **Re-verify every `file:line` before editing.** Citations in these tickets
   were accurate against `feat/popup-redesign-landing` at review time; earlier
   tickets landing will shift them. `grep -n` for the quoted code, never trust
@@ -27,7 +30,9 @@ ways; every rule below maps to a known failure mode.
   loosening timeouts, or `test.fixme`.
 - **Diff scope = ticket scope.** No opportunistic refactors, renames, or
   formatting in files the ticket doesn't name. If you find an adjacent bug,
-  report it; don't fix it in the same diff.
+  report it; don't fix it in the same diff. DRY-ing up the exact region your fix
+  touches is in scope, not opportunistic — that is how each ticket leaves no
+  duplicated fix behind; refactors beyond that region stay out.
 - **No commits or pushes unless Ian asks in the moment.** Leave the working
   tree ready; never commit local test recordings.
 - **Verification is command output only.** There is no manual browser to look
