@@ -16,8 +16,8 @@ async function activeTabId() {
 
 // renderErrorReport bundles the error callout + "Report on GitHub" link AND the
 // PII warning into one container. The component has two distinct notice slots —
-// a red error box and a gold PII box — so split them: error + link go to
-// showError, the PII warning to showPii. Keeps them visually separate.
+// a red error box and a gold warning box — so split them: error + link go to
+// showError, the PII warning to showWarning. Keeps them visually separate.
 function showFailure(error) {
   const tmp = document.createElement("div");
   renderErrorReport(tmp, error, ENV);
@@ -25,7 +25,7 @@ function showFailure(error) {
   const piiText = pii ? pii.textContent : "";
   if (pii) pii.remove();
   oj.showError(tmp.innerHTML);
-  oj.showPii(piiText);
+  oj.showWarning(piiText);
 }
 
 /* ---------------- record / stop ---------------- */

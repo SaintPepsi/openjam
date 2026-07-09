@@ -219,7 +219,7 @@ test("restricted pages fail with a reportable error", async () => {
 
   // The popup's failure branch (popup.js showFailure) splits renderErrorReport's
   // output across the component's TWO notice slots: the error + GitHub link go to
-  // showError (red box), the PII warning to showPii (gold box). Mirror that here.
+  // showError (red box), the PII warning to showWarning (gold box). Mirror that here.
   await popup.evaluate(async (error) => {
     const { renderErrorReport } = await import("./issue-link.js");
     const oj = document.getElementById("oj");
@@ -232,20 +232,20 @@ test("restricted pages fail with a reportable error", async () => {
     const piiText = pii ? pii.textContent : "";
     if (pii) pii.remove();
     oj.showError(tmp.innerHTML);
-    oj.showPii(piiText);
+    oj.showWarning(piiText);
   }, res.error);
   await expect(popup.locator("openjam-popup .err a")).toHaveAttribute(
     "href",
     /github\.com\/SaintPepsi\/openjam\/issues\/new/,
   );
   // The PII warning is its OWN gold notice, not fused into the red error box.
-  await expect(popup.locator("openjam-popup .pii")).toContainText("remove any PII");
+  await expect(popup.locator("openjam-popup .warn")).toContainText("remove any PII");
   await expect(popup.locator("openjam-popup .err .pii-warning")).toHaveCount(0);
   // The failure renders as a red error callout, not gray hint text. Visual
   // baseline of both notices (red error + link, then separate gold PII box);
   // the text is static, so the snapshot is deterministic across runs.
   await expect(popup.locator("openjam-popup .err")).toBeVisible();
-  await expect(popup.locator("openjam-popup .pii")).toBeVisible();
+  await expect(popup.locator("openjam-popup .warn")).toBeVisible();
   await expect(popup.locator("openjam-popup .card")).toHaveScreenshot("popup-error-callout.png");
   await restricted.close();
   await popup.close();
@@ -300,5 +300,49 @@ test("double-click on the record toggle starts exactly one recording, no error",
 
   await sendAction(popup, { action: "stop" }); // finalize so state doesn't leak
   await fixture.close();
+  await popup.close();
+});
+
+test("_render derives the whole display from component state (ui = fn(state))", async () => {
+  // 05b: one _render() is the single place that writes display DOM — handlers
+  // mutate state and call it, so the rendered UI can't drift from state. Drive
+  // the real _render with state and assert the DOM follows: label from
+  // `recording`, timer from `_elapsed` (demo meta), error notice hidden when the
+  // error state is empty and shown when it is set.
+  const popup = await openPopup(context, extensionId);
+
+  // label derives from `recording`
+  const label = await popup.evaluate(() => {
+    const el = document.querySelector("openjam-popup");
+    const t = () => el.shadowRoot.querySelector(".row.primary .t").textContent;
+    el.recording = false; el._render();
+    const off = t();
+    el.recording = true; el._render();
+    return { off, on: t() };
+  });
+  expect(label).toEqual({ off: "Start recording", on: "Stop & open report" });
+
+  // timer text derives from `_elapsed` (demo meta shows a running clock)
+  const timer = await popup.evaluate(() => {
+    const el = document.querySelector("openjam-popup");
+    el.setAttribute("demo", "");
+    el.recording = true; el._elapsed = 65000; el._render();
+    return el.shadowRoot.querySelector(".st-meta").textContent;
+  });
+  expect(timer).toBe("01:05");
+
+  // error notice visibility derives from the error state
+  const notice = await popup.evaluate(() => {
+    const el = document.querySelector("openjam-popup");
+    const err = () => el.shadowRoot.querySelector(".err");
+    el._error = ""; el._render();
+    const whenEmpty = err().hidden;
+    el._error = "boom"; el._render();
+    return { whenEmpty, whenSet: err().hidden, text: err().textContent };
+  });
+  expect(notice.whenEmpty).toBe(true);
+  expect(notice.whenSet).toBe(false);
+  expect(notice.text).toContain("boom");
+
   await popup.close();
 });

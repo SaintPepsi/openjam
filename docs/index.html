@@ -514,7 +514,7 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
  *   .setStatus({ recording, eventCount })
  *   .setMicLevel(v)                   0..1 — drives the live meter
  *   .setMics([{id,label}], selectedId)
- *   .showError(msg) / .showPii(msg) / .clearNotices()
+ *   .showError(msg) / .showWarning(msg) / .clearNotices()
  *   attributes: recording, mic, demo, tilt
  *   events (bubbling, composed): oj-toggle, oj-mic-toggle{enabled}, oj-mic-change{deviceId}
  * ========================================================================== */
@@ -601,7 +601,7 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
     /* notices */
     ".notice{font-size:11.5px; border-radius:8px; padding:8px 10px; margin-top:2px; font-weight:600; line-height:1.4}",
     ".err{border:1px solid var(--red); background:rgba(248,81,73,.15); color:#ff7b72}",
-    ".pii{border:1px solid var(--gold); background:rgba(210,153,34,.15); color:#e3b341}",
+    ".warn{border:1px solid var(--gold); background:rgba(210,153,34,.15); color:#e3b341}",
     ".hint{color:var(--muted); font-size:11.5px; line-height:1.5; padding:4px 5px 2px}",
     ".hint a{color:var(--accent)}",
     "[hidden]{display:none !important}",
@@ -635,7 +635,7 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
     "      </div>",
     "    </div>",
     "    <div class='notice err' hidden></div>",
-    "    <div class='notice pii' hidden></div>",
+    "    <div class='notice warn' hidden></div>",
     "    <div class='hint'>Records console, network, errors &amp; a full session replay on the active tab.</div>",
     "  </div>",
     "</div>"
@@ -652,6 +652,8 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
       this._levels = new Array(METER_BARS).fill(0);
       this._elapsed = 0;
       this._eventCount = 0;
+      this._error = "";
+      this._warning = "";
       this._raf = 0;
       this._reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     }
@@ -669,7 +671,7 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
       this._elStLbl = r.querySelector(".st-lbl");
       this._elStMeta = r.querySelector(".st-meta");
       this._elErr = r.querySelector(".err");
-      this._elPii = r.querySelector(".pii");
+      this._elWarn = r.querySelector(".warn");
 
       // build meter bars
       for (var i = 0; i < METER_BARS; i++) {
@@ -689,7 +691,7 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
         this._emit("oj-mic-change", { deviceId: this._elSelect.value || null });
       });
 
-      this._syncLabels();
+      this._render();
       this._loop();
 
       if (this.hasAttribute("demo")) this._startDemo();
@@ -704,7 +706,7 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
       if (this._tiltHandler) window.removeEventListener("mousemove", this._tiltHandler);
     }
 
-    attributeChangedCallback() { if (this._elToggle) this._syncLabels(); }
+    attributeChangedCallback() { if (this._elToggle) this._render(); }
 
     /* ---------- public API ---------- */
     get recording() { return this.hasAttribute("recording"); }
@@ -717,7 +719,7 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
       if ("recording" in s) this.recording = !!s.recording;
       if ("eventCount" in s && s.eventCount != null) this._eventCount = s.eventCount;
       if (this._elToggle) this._elToggle.disabled = false; // round-trip settled: release the re-entrancy guard
-      this._syncLabels();
+      this._render();
     }
 
     // 0..1 level from the host's real mic analyser
@@ -737,9 +739,9 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
       });
     }
 
-    showError(msg) { this._elErr.innerHTML = msg || ""; this._elErr.hidden = !msg; }
-    showPii(msg) { this._elPii.textContent = msg || ""; this._elPii.hidden = !msg; }
-    clearNotices() { this._elErr.hidden = true; this._elPii.hidden = true; }
+    showError(msg) { this._error = msg || ""; this._render(); }
+    showWarning(msg) { this._warning = msg || ""; this._render(); }
+    clearNotices() { this._error = ""; this._warning = ""; this._render(); }
 
     /* ---------- internals ---------- */
     _emit(name, detail) {
@@ -762,12 +764,15 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
     _onMic() {
       var next = !this.micEnabled;
       this.micEnabled = next;
-      this._syncLabels();
+      this._render();
       this._emit("oj-mic-toggle", { enabled: next });
       if (this.hasAttribute("demo")) this._demoMic(next);
     }
 
-    _syncLabels() {
+    // ui = fn(state): the single place that writes display DOM. Every derived
+    // value is read from component state here; handlers mutate state and call
+    // _render, so what's shown can't drift from what's true.
+    _render() {
       if (!this._elToggle) return;
       this._elMicHead.setAttribute("aria-checked", String(this.micEnabled));
       var rec = this.recording;
@@ -788,6 +793,11 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
         ? (rec ? "Recording your narration" : "On · talk through the bug")
         : "Off · talk through the bug";
       this._elMeterHint.hidden = !(rec && this.micEnabled);
+      // notices: err carries HTML (issue link); warn is plain text. Hidden when empty.
+      this._elErr.innerHTML = this._error || "";
+      this._elErr.hidden = !this._error;
+      this._elWarn.textContent = this._warning || "";
+      this._elWarn.hidden = !this._warning;
     }
 
     _fmt(ms) {
@@ -817,7 +827,7 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
       this.micEnabled = true;
       this.setMics([{ id: "default", label: "MacBook Pro Microphone" }, { id: "ext", label: "External USB Mic" }], "default");
       this._elapsed = 14000;
-      this._syncLabels();
+      this._render();
       // synthetic speech-cadence level feed for the meter (visual only)
       var t0 = performance.now();
       var feed = () => {
@@ -832,19 +842,19 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
       this._feedRaf = requestAnimationFrame(feed);
       // running REC timer
       this._demoTimer = setInterval(() => {
-        if (this.recording) { this._elapsed += 1000; this._syncLabels(); }
+        if (this.recording) { this._elapsed += 1000; this._render(); }
       }, 1000);
     }
 
     _demoToggle() {
       if (!this.recording) { this._elapsed = 0; this._eventCount = 0; }
-      this._syncLabels();
+      this._render();
     }
 
     _demoMic(on) {
       // clear meter quickly when turned off
       if (!on) this._levels = new Array(METER_BARS).fill(0);
-      this._syncLabels();
+      this._render();
     }
 
     /* ---------- 3D tilt (marketing hero) ---------- */
