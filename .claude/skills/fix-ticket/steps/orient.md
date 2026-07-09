@@ -19,6 +19,10 @@ epic's own guide for its equivalents):
   05 of popup-redesign-fixes lands, an edit to one copy does not reach the other.
 - `npm test` runs `node build.mjs` first; judge `docs/index.html` only after a
   fresh build.
+- If the fix changes what a component displays, flag it as a `ui = fn(state)`
+  ticket (`steps/gate.sh note <RUN_ID> "ui-state: display derives from state"`)
+  so Approaches and Implement keep the change flowing through state, not a fresh
+  imperative DOM poke.
 
 Evidence for the gate: one line naming what was verified, e.g.
 `"6/6 citations reproduced, 1 drift noted"`.

@@ -15,6 +15,10 @@ Hard boundaries:
 - **No commits, no pushes, no `manifest.json` version changes** — the extension
   is live on the Chrome Web Store with `v*` tags auto-releasing
   (`docs/popup-redesign-fixes/09-execution-guide.md`, Known traps).
+- **`ui = fn(state)` when the fix changes display.** Mutate component state and
+  let render reflect it; don't imperatively set the label / timer / meter /
+  error notice / a CSS-keyed attribute in a handler such that UI can drift from
+  state. Match the state-derived approach recorded at step 5.
 - Match the surrounding code's style and comment density; comments state
   constraints the code can't show, nothing else.
 - If the fix touches `openjam-popup.js` while `docs/index.html` still carries

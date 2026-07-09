@@ -15,6 +15,11 @@ names; existing assertions are never edited to make a suite pass; no commits,
 pushes, or `manifest.json` version changes — the working tree is left ready for
 Ian's review (repo root `CLAUDE.md`; `docs/popup-redesign-fixes/09-execution-guide.md`).
 
+Codebase pattern — **`ui = fn(state)`**: when a fix changes what a component
+displays, flow the change through **state → render**, never a fresh imperative
+DOM poke in a handler. Scattered pokes drift UI out of sync with state. A lens
+at **Approaches** (step 4) and a boundary at **Implement** (step 7).
+
 Steps 3–5 inline the design phases of the Brainstorming engineering skill
 (`~/.claude/skills/Brainstorming/engineering/SKILL.md`), deliberately bounded:
 no design doc is written or committed, and no `writing-plans` handoff happens —

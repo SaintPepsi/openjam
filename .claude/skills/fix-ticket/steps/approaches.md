@@ -14,6 +14,11 @@ pipeline:
   machinery the acceptance criteria don't demand loses by default.
 - **No "too simple to design".** Even a 5-line fix gets its alternatives named
   — one-liners per approach is fine; skipping the comparison is not.
+- **`ui = fn(state)` for component-UI fixes.** If the fix changes what a
+  component displays, at least one approach must derive that display from state
+  and re-render rather than set the DOM imperatively in the handler. An
+  imperative-poke approach is fine to propose, but only if it names the state↔UI
+  drift it accepts. Record the choice in the step 5 design note.
 
 Bounded deviations from the source skill — these are deliberate, not drift:
 
