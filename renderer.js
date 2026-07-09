@@ -5,9 +5,14 @@
 
 export const REPORT_CSS = `
 :root{
-  --bg:#0f1115;--panel:#171a21;--panel2:#1d212b;--line:#2a2f3a;--fg:#e6e9ef;
-  --muted:#8b93a3;--dim:#5b6472;--accent:#6ea8fe;--accent-ink:#0b0d12;
-  --green:#3fb950;--orange:#d29922;--red:#f85149;--blue:#58a6ff;--violet:#bc8cff;--audio:#1d2b45;
+  /* tokens:start */
+  --bg:#0f1115; --bg2:#0b0d12; --panel:#171a21; --panel2:#1d212b;
+  --line:#2a2f3a; --line-soft:#212632;
+  --fg:#e6e9ef; --muted:#8b93a3; --dim:#5b6472;
+  --accent:#6ea8fe; --accent2:#58a6ff; --blue:var(--accent2); --accent-ink:#0b0d12;
+  --green:#3fb950; --gold:#d29922; --orange:var(--gold); --terra:#d97757;
+  --red:#f85149; --violet:#bc8cff; --audio:#1d2b45;
+  /* tokens:end */
   --card:linear-gradient(180deg,#1b1f28,#141821);
   --card-shadow:0 18px 40px -24px rgba(0,0,0,.8), 0 1px 0 rgba(255,255,255,.05) inset;
   --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif;
@@ -182,7 +187,7 @@ export function mountReplay(container, report, ReplayerCtor) {
   var audioCtx = null, audioBuf = null, gainNode = null, srcNode = null;
   var audioVol = 1, audioMuted = false, audioPlaying = false;
   var srcStartCtx = 0, srcStartOffset = 0, curSpeed = 1;
-  var wave = null, peaks = null, hasWave = false, waveWrap = null;
+  var wave = null, peaks = null, hasWave = false, waveWrap = null, waveColors = null;
 
   // ONE timeline spanning the LONGER of the replay and the narration window —
   // you usually keep talking after the screen stops changing, and that tail
@@ -316,6 +321,14 @@ export function mountReplay(container, report, ReplayerCtor) {
     if (wave.width !== cw || wave.height !== chh) { wave.width = cw; wave.height = chh; }
     var ctx = wave.getContext("2d");
     ctx.clearRect(0, 0, cw, chh);
+    // Canvas can't read CSS vars, so pull the palette off the element's computed
+    // style once (it's constant for the element's life) — keeps the single source
+    // (tokens.css) as the only home for these colours, without a per-frame style
+    // flush. The unplayed-bar shade below has no CSS consumer, so it stays a literal.
+    if (!waveColors) {
+      var cs = getComputedStyle(wave);
+      waveColors = { accent: cs.getPropertyValue("--accent").trim(), muted: cs.getPropertyValue("--muted").trim() };
+    }
     // The strip IS the timeline (0..duration), so the wave is drawn at the
     // narration's true offset and scale on it — playhead, scrub bar and wave
     // share one axis instead of the wave silently stretching to fit.
@@ -327,12 +340,12 @@ export function mountReplay(container, report, ReplayerCtor) {
       var x = x0 + i * barW;
       if (x + barW < 0 || x > cw) continue;
       var h = Math.max(dpr, peaks[i] * chh * 0.85);
-      ctx.fillStyle = x < playX ? "#6ea8fe" : "#3b414d";
+      ctx.fillStyle = x < playX ? waveColors.accent : "#3b414d";
       ctx.fillRect(x, mid - h / 2, Math.max(dpr, barW - dpr), h);
     }
     if (duration > total) {
       // tick where on-screen activity ends and narration-only tail begins
-      ctx.fillStyle = "#8b93a3";
+      ctx.fillStyle = waveColors.muted;
       ctx.fillRect((total / duration) * cw, 0, dpr, chh);
     }
   }

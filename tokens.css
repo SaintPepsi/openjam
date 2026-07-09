@@ -1,0 +1,18 @@
+/* OpenJam colour palette — the single source of truth.
+ *
+ * build.mjs splices these declarations into every consumer's token-marker
+ * region (tokens:start / tokens:end): the component (:host), the report
+ * renderer (REPORT_CSS :root), the viewer page, and the landing page (:root).
+ * Edit a colour HERE and rebuild; a hand-edit inside a generated block is
+ * overwritten on the next `node build.mjs`.
+ *
+ * Each hex is authored once. Names that historically diverged between
+ * consumers (--orange/--gold, --blue/--accent2) are kept as aliases so no
+ * consumer's existing var() usages need renaming.
+ */
+--bg:#0f1115; --bg2:#0b0d12; --panel:#171a21; --panel2:#1d212b;
+--line:#2a2f3a; --line-soft:#212632;
+--fg:#e6e9ef; --muted:#8b93a3; --dim:#5b6472;
+--accent:#6ea8fe; --accent2:#58a6ff; --blue:var(--accent2); --accent-ink:#0b0d12;
+--green:#3fb950; --gold:#d29922; --orange:var(--gold); --terra:#d97757;
+--red:#f85149; --violet:#bc8cff; --audio:#1d2b45;

@@ -54,19 +54,24 @@
   TPL.innerHTML = [
     "<style>",
     ":host{",
-    "  --oj-bg:#0f1115; --oj-panel:#171a21; --oj-line:#2a2f3a; --oj-fg:#e6e9ef;",
-    "  --oj-muted:#8b93a3; --oj-dim:#5b6472; --oj-accent:#6ea8fe; --oj-accent-ink:#0b0d12;",
-    "  --oj-red:#f85149; --oj-audio:#1d2b45; --oj-gold:#d29922;",
-    "  --oj-sans:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif;",
-    "  --oj-mono:ui-monospace,'SF Mono',SFMono-Regular,'Cascadia Code',Menlo,Consolas,monospace;",
-    "  display:block; color:var(--oj-fg); font-family:var(--oj-sans);",
+    /* tokens:start */
+    "  --bg:#0f1115; --bg2:#0b0d12; --panel:#171a21; --panel2:#1d212b;",
+    "  --line:#2a2f3a; --line-soft:#212632;",
+    "  --fg:#e6e9ef; --muted:#8b93a3; --dim:#5b6472;",
+    "  --accent:#6ea8fe; --accent2:#58a6ff; --blue:var(--accent2); --accent-ink:#0b0d12;",
+    "  --green:#3fb950; --gold:#d29922; --orange:var(--gold); --terra:#d97757;",
+    "  --red:#f85149; --violet:#bc8cff; --audio:#1d2b45;",
+    /* tokens:end */
+    "  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif;",
+    "  --mono:ui-monospace,'SF Mono',SFMono-Regular,'Cascadia Code',Menlo,Consolas,monospace;",
+    "  display:block; color:var(--fg); font-family:var(--sans);",
     "}",
     /* 3D wrapper (only tilts when [tilt] is set) */
     ".stage{perspective:1400px}",
     ":host([tilt]) .stage{animation:oj-float 6.5s ease-in-out infinite}",
     "@keyframes oj-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)}}",
     ".card{",
-    "  transform-style:preserve-3d; transform:rotateX(var(--oj-rx,0deg)) rotateY(var(--oj-ry,0deg));",
+    "  transform-style:preserve-3d; transform:rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg));",
     "  background:linear-gradient(180deg,#1b1f28,#141821); border:1px solid #303747;",
     "  border-radius:16px; padding:13px; box-shadow:0 30px 70px -30px rgba(0,0,0,.85), 0 1px 0 rgba(255,255,255,.06) inset;",
     "}",
@@ -74,59 +79,59 @@
     ".head{display:flex; align-items:center; gap:8px; padding:3px 5px 12px}",
     ".fruit{font-size:13px; white-space:nowrap; flex:0 0 auto; margin-right:3px}",
     ".name{font-weight:700; font-size:14px; letter-spacing:-.01em}",
-    ".status{margin-left:auto; display:flex; align-items:center; gap:6px; font-family:var(--oj-mono); font-size:10.5px; letter-spacing:.04em; color:var(--oj-muted)}",
-    ".dot{width:7px; height:7px; border-radius:50%; background:var(--oj-dim); flex:0 0 auto}",
-    ":host([recording]) .dot{background:var(--oj-red); box-shadow:0 0 0 0 rgba(248,81,73,.5); animation:oj-pulse 2s ease-out infinite}",
-    ":host([recording]) .st-lbl{color:var(--oj-red)}",
+    ".status{margin-left:auto; display:flex; align-items:center; gap:6px; font-family:var(--mono); font-size:10.5px; letter-spacing:.04em; color:var(--muted)}",
+    ".dot{width:7px; height:7px; border-radius:50%; background:var(--dim); flex:0 0 auto}",
+    ":host([recording]) .dot{background:var(--red); box-shadow:0 0 0 0 rgba(248,81,73,.5); animation:oj-pulse 2s ease-out infinite}",
+    ":host([recording]) .st-lbl{color:var(--red)}",
     "@keyframes oj-pulse{0%{box-shadow:0 0 0 0 rgba(248,81,73,.5)}70%{box-shadow:0 0 0 7px rgba(248,81,73,0)}100%{box-shadow:0 0 0 0 rgba(248,81,73,0)}}",
-    ".st-meta{color:var(--oj-dim)}",
+    ".st-meta{color:var(--dim)}",
     /* rows */
     ".row{display:flex; align-items:center; gap:11px; width:100%; text-align:left; box-sizing:border-box;",
-    "  background:var(--oj-bg); border:1px solid var(--oj-line); border-radius:11px; padding:12px 13px; margin-bottom:8px;",
-    "  color:var(--oj-fg); font-size:14px; font-weight:600; font-family:var(--oj-sans); cursor:pointer;",
+    "  background:var(--bg); border:1px solid var(--line); border-radius:11px; padding:12px 13px; margin-bottom:8px;",
+    "  color:var(--fg); font-size:14px; font-weight:600; font-family:var(--sans); cursor:pointer;",
     "  transition:border-color .16s ease, background .16s ease, transform .1s ease}",
     ".row:not(.primary):hover{border-color:#3a4252; background:#141922}",
     ".row .ic{width:18px; height:18px; flex:0 0 auto; display:grid; place-items:center}",
-    ".ic svg{width:16px; height:16px; stroke:var(--oj-accent); stroke-width:2; fill:none; stroke-linecap:round; stroke-linejoin:round}",
-    ".row.primary{background:var(--oj-accent); color:var(--oj-accent-ink); border-color:transparent; justify-content:center; font-weight:700}",
-    ".row.primary .ic svg{stroke:var(--oj-accent-ink)}",
+    ".ic svg{width:16px; height:16px; stroke:var(--accent); stroke-width:2; fill:none; stroke-linecap:round; stroke-linejoin:round}",
+    ".row.primary{background:var(--accent); color:var(--accent-ink); border-color:transparent; justify-content:center; font-weight:700}",
+    ".row.primary .ic svg{stroke:var(--accent-ink)}",
     ".row.primary:hover{background:#8bbcff}",
-    ":host([recording]) .row.primary{background:var(--oj-red); color:#fff}",
+    ":host([recording]) .row.primary{background:var(--red); color:#fff}",
     ":host([recording]) .row.primary .ic svg{stroke:#fff}",
     ":host([recording]) .row.primary:hover{background:#ff6b63}",
     ".dotr{width:9px; height:9px; border-radius:50%; background:currentColor}",
     /* mic block */
-    ".mic{display:block; padding:0; border:1px solid var(--oj-line); border-radius:11px; overflow:hidden; margin-bottom:8px; background:var(--oj-bg); cursor:default}",
-    ":host([mic]) .mic{background:var(--oj-audio); border-color:transparent; box-shadow:inset 3px 0 0 var(--oj-accent)}",
+    ".mic{display:block; padding:0; border:1px solid var(--line); border-radius:11px; overflow:hidden; margin-bottom:8px; background:var(--bg); cursor:default}",
+    ":host([mic]) .mic{background:var(--audio); border-color:transparent; box-shadow:inset 3px 0 0 var(--accent)}",
     ".mic-head{display:flex; align-items:center; gap:11px; padding:12px 13px; cursor:pointer}",
-    ".mic-head .ic svg{stroke:var(--oj-muted)}",
-    ":host([mic]) .mic-head .ic svg{stroke:var(--oj-accent)}",
+    ".mic-head .ic svg{stroke:var(--muted)}",
+    ":host([mic]) .mic-head .ic svg{stroke:var(--accent)}",
     ".mic-lbl{font-size:14px; font-weight:600}",
-    ".mic-sub{display:block; font-family:var(--oj-mono); font-size:10.5px; font-weight:500; color:var(--oj-dim); margin-top:2px; letter-spacing:.02em}",
+    ".mic-sub{display:block; font-family:var(--mono); font-size:10.5px; font-weight:500; color:var(--dim); margin-top:2px; letter-spacing:.02em}",
     /* switch */
     ".sw{margin-left:auto; width:36px; height:21px; border-radius:999px; background:#2a2f3a; position:relative; flex:0 0 auto; transition:background .18s ease}",
     ".sw::after{content:''; position:absolute; top:2px; left:2px; width:17px; height:17px; border-radius:50%; background:#8b93a3; transition:transform .18s ease, background .18s ease}",
-    ":host([mic]) .sw{background:var(--oj-accent)}",
+    ":host([mic]) .sw{background:var(--accent)}",
     ":host([mic]) .sw::after{transform:translateX(15px); background:#0b0d12}",
     /* mic body (list + meter) collapses when off */
     ".mic-body{max-height:0; opacity:0; transition:max-height .24s ease, opacity .2s ease; padding:0 13px}",
     ":host([mic]) .mic-body{max-height:120px; opacity:1; padding-bottom:12px}",
-    "select{width:100%; box-sizing:border-box; background:var(--oj-bg); color:var(--oj-fg); border:1px solid var(--oj-line);",
-    "  border-radius:8px; padding:7px 9px; font-size:12.5px; font-family:var(--oj-sans); margin-bottom:4px}",
+    "select{width:100%; box-sizing:border-box; background:var(--bg); color:var(--fg); border:1px solid var(--line);",
+    "  border-radius:8px; padding:7px 9px; font-size:12.5px; font-family:var(--sans); margin-bottom:4px}",
     /* meter (live mic level) + label on one compact row — only while recording */
     ".meter-row{display:none; align-items:center; gap:9px; padding-top:2px}",
     ":host([recording][mic]) .meter-row{display:flex}",
     ".meter{flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:2px; height:22px; padding:0 1px}",
-    ".meter .bar{flex:1 1 0; min-width:2px; border-radius:2px; background:var(--oj-accent); transform:scaleY(.12); transform-origin:center; opacity:.9}",
-    ".meter-hint{font-family:var(--oj-mono); font-size:10px; color:var(--oj-accent); letter-spacing:.04em; white-space:nowrap; flex:0 0 auto}",
+    ".meter .bar{flex:1 1 0; min-width:2px; border-radius:2px; background:var(--accent); transform:scaleY(.12); transform-origin:center; opacity:.9}",
+    ".meter-hint{font-family:var(--mono); font-size:10px; color:var(--accent); letter-spacing:.04em; white-space:nowrap; flex:0 0 auto}",
     ".meter-hint::before{content:'\\25CF '}",
     ":host([recording][mic]) .mic-body{max-height:150px}",
     /* notices */
     ".notice{font-size:11.5px; border-radius:8px; padding:8px 10px; margin-top:2px; font-weight:600; line-height:1.4}",
-    ".err{border:1px solid var(--oj-red); background:rgba(248,81,73,.15); color:#ff7b72}",
-    ".pii{border:1px solid var(--oj-gold); background:rgba(210,153,34,.15); color:#e3b341}",
-    ".hint{color:var(--oj-muted); font-size:11.5px; line-height:1.5; padding:4px 5px 2px}",
-    ".hint a{color:var(--oj-accent)}",
+    ".err{border:1px solid var(--red); background:rgba(248,81,73,.15); color:#ff7b72}",
+    ".pii{border:1px solid var(--gold); background:rgba(210,153,34,.15); color:#e3b341}",
+    ".hint{color:var(--muted); font-size:11.5px; line-height:1.5; padding:4px 5px 2px}",
+    ".hint a{color:var(--accent)}",
     "[hidden]{display:none !important}",
     "@media (prefers-reduced-motion:reduce){",
     "  :host([tilt]) .stage{animation:none}",
@@ -405,7 +410,7 @@
 
     /* ---------- 3D tilt (marketing hero) ---------- */
     _startTilt() {
-      if (this._reduce) { this.style.setProperty("--oj-rx", "6deg"); this.style.setProperty("--oj-ry", "-8deg"); return; }
+      if (this._reduce) { this.style.setProperty("--rx", "6deg"); this.style.setProperty("--ry", "-8deg"); return; }
       var card = this.shadowRoot.querySelector(".card");
       var hovering = false, tx = 6, ty = -8, cx = 6, cy = -8;
       this._tiltHandler = (e) => {
@@ -421,8 +426,8 @@
         var targetX = hovering ? tx : 6 + Math.sin(t / 1700) * 1.6;
         var targetY = hovering ? ty : -8 + Math.cos(t / 1500) * 1.6;
         cx += (targetX - cx) * 0.09; cy += (targetY - cy) * 0.09;
-        card.style.setProperty("--oj-rx", cx.toFixed(2) + "deg");
-        card.style.setProperty("--oj-ry", cy.toFixed(2) + "deg");
+        card.style.setProperty("--rx", cx.toFixed(2) + "deg");
+        card.style.setProperty("--ry", cy.toFixed(2) + "deg");
         this._tiltRaf = requestAnimationFrame(loop);
       };
       this._tiltRaf = requestAnimationFrame(loop);

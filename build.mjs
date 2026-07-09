@@ -11,6 +11,58 @@
 import { build } from "esbuild";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 
+// --- single-source splicing ------------------------------------------------
+// The popup component and the colour palette each have ONE authored home
+// (openjam-popup.js, tokens.css). Every other place they appear is a generated
+// region between markers, refreshed here so the copies can never drift
+// (docs/popup-redesign-fixes/05-component-source-of-truth.md). A hand-edit
+// inside a marked region is overwritten on the next build — that is the point.
+
+// Replace the text between `start` and `end` (markers kept) with `body`.
+function splice(text, start, end, body, where) {
+  const s = text.indexOf(start);
+  if (s === -1) throw new Error(`splice: missing marker ${start} in ${where}`);
+  const e = text.indexOf(end, s + start.length);
+  if (e === -1) throw new Error(`splice: missing marker ${end} after ${start} in ${where}`);
+  return text.slice(0, s + start.length) + body + text.slice(e);
+}
+
+const TOK_START = "/* tokens:start */";
+const TOK_END = "/* tokens:end */";
+
+// The palette lines from tokens.css (declarations only, comments dropped).
+const tokenLines = readFileSync("tokens.css", "utf8")
+  .split("\n")
+  .map((l) => l.trim())
+  .filter((l) => l.startsWith("--"));
+
+// Two renderings of the same palette: raw CSS for the .css/.html/template-literal
+// consumers, and quoted JS array elements for the component's string-array <style>.
+const tokensCss = "\n  " + tokenLines.join("\n  ") + "\n  ";
+const tokensJsArray = "\n    " + tokenLines.map((l) => JSON.stringify("  " + l) + ",").join("\n    ") + "\n    ";
+
+// Fan the palette out to every consumer between its token markers.
+for (const file of ["renderer.js", "viewer.html", "openjam-popup.js"]) {
+  // openjam-popup.js builds its <style> as a JS string-array, so it takes the
+  // array-element rendering; the others are raw CSS.
+  const body = file === "openjam-popup.js" ? tokensJsArray : tokensCss;
+  writeFileSync(file, splice(readFileSync(file, "utf8"), TOK_START, TOK_END, body, file));
+}
+
+// Splice the (now palette-refreshed) component into the landing page, and the
+// palette into the landing :root. The component is inlined as a <script>, so
+// neutralise `</script` (the sequence that ends script data) before embedding —
+// same escaping report-builder.js does when it inlines the component into an
+// export (https://html.spec.whatwg.org/multipage/scripting.html#restrictions-for-contents-of-script-elements).
+const POPUP_START = "<!-- openjam-popup:start -->";
+const POPUP_END = "<!-- openjam-popup:end -->";
+const componentJs = readFileSync("openjam-popup.js", "utf8").replace(/<\/script/gi, "<\\/script");
+let landing = readFileSync("docs/index.html", "utf8");
+landing = splice(landing, TOK_START, TOK_END, tokensCss, "docs/index.html (:root)");
+landing = splice(landing, POPUP_START, POPUP_END, "\n<script>\n" + componentJs + "\n</script>\n", "docs/index.html (component)");
+writeFileSync("docs/index.html", landing);
+console.log("spliced palette into 4 consumers + component into docs/index.html");
+
 await build({
   entryPoints: ["src/rrweb-recorder.js"],
   bundle: true,
