@@ -71,7 +71,7 @@ async function saveAudio(patch) {
 oj.addEventListener("oj-mic-toggle", async (e) => {
   const enabled = e.detail.enabled;
   await saveAudio({ enabled });
-  if (!enabled) return;
+  if (!enabled) { oj.showError(""); return; }   // toggling off abandons the grant flow the error describes
   if (!(await micGranted())) {
     // Popup can't prompt — open the focused permission tab, like the old popup did.
     chrome.tabs.create({ url: chrome.runtime.getURL("mic-permission.html") });
@@ -79,6 +79,7 @@ oj.addEventListener("oj-mic-toggle", async (e) => {
     return;
   }
   await listMics(null);
+  oj.showError("");   // grant is present now: clear any stale "grant access" error
 });
 
 oj.addEventListener("oj-mic-change", (e) => saveAudio({ deviceId: e.detail.deviceId }));
@@ -86,8 +87,12 @@ oj.addEventListener("oj-mic-change", (e) => saveAudio({ deviceId: e.detail.devic
 async function loadAudio() {
   const { audioSettings } = await chrome.storage.local.get("audioSettings");
   const s = audioSettings || { enabled: false, deviceId: null };
-  oj.micEnabled = s.enabled;                       // reflects into the component's toggle
-  if (s.enabled && (await micGranted())) await listMics(s.deviceId);
+  // The switch reflects real capability, not stored intent: enabled-but-not-granted
+  // shows OFF with a hint, so we never render it ON above an empty picker.
+  const granted = s.enabled && (await micGranted());
+  oj.micEnabled = granted;
+  if (granted) await listMics(s.deviceId);
+  else if (s.enabled) oj.showWarning("Microphone access isn't granted. Turn narration on to grant it.");
 }
 
 /* ---------------- boot + poll ---------------- */

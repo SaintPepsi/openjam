@@ -424,3 +424,63 @@ test("[disconfirming] export of a null-audio report renders no <audio> element",
   await expect(page.locator("audio")).toHaveCount(0);
   await page.close();
 });
+
+// ---- AC 5 (ticket 03): mic narration state recovery -----------------------
+// The harness launches with --use-fake-ui-for-media-stream, which makes
+// navigator.permissions.query report the mic as "granted" even after
+// context.clearPermissions(). To exercise the no-grant path we simulate a
+// missing grant at the API popup.js actually reads (permissions.query), the
+// same spirit as the harness faking the media device, then reload so
+// popup.js re-runs against it.
+async function openPopupNoGrant(seedSettings) {
+  const popup = await openPopup(context, extensionId);
+  if (seedSettings === undefined) await clearAudioSettings(popup);
+  else await setAudioSettings(popup, seedSettings);
+  await popup.addInitScript(() => {
+    const real = navigator.permissions.query.bind(navigator.permissions);
+    navigator.permissions.query = (d) =>
+      d && d.name === "microphone" ? Promise.resolve({ state: "prompt", onchange: null }) : real(d);
+  });
+  await popup.reload();
+  await popup.locator("openjam-popup").waitFor();
+  await popup.waitForFunction(() => {
+    const el = document.querySelector("openjam-popup");
+    return !!el?.shadowRoot?.querySelector("button");
+  });
+  return popup;
+}
+
+// Problem A: on a missing grant, loadAudio must not render the switch ON above
+// an empty, expanded picker. Fork (Ian to ratify): reflect the switch OFF with
+// a visible hint, rather than keep it ON and reopen the grant flow.
+test("revoked permission with audioSettings.enabled: switch OFF and a visible grant hint", async () => {
+  const popup = await openPopupNoGrant({ enabled: true, deviceId: null });
+  // The hint appears only from the fixed loadAudio path; asserting it first also
+  // proves loadAudio settled before we read the switch (default is already OFF).
+  await expect(popup.locator("openjam-popup").locator(".notice.warn")).toBeVisible();
+  await expect(popup.locator("[data-act=mic]")).toHaveAttribute("aria-checked", "false");
+  await popup.close();
+});
+
+// Problem B: the mic-toggle handler must clear the stale grant error when the
+// user toggles narration back off (and on a later successful listMics).
+test("mic grant error clears when narration is toggled back off", async () => {
+  const popup = await openPopupNoGrant();
+
+  const err = popup.locator("openjam-popup").locator(".notice.err");
+  // Toggle ON with no grant: handler opens the focused permission tab and shows
+  // the "Opening a tab to grant microphone access…" error.
+  const micTab = context.waitForEvent("page").catch(() => null);
+  await popup.locator("[data-act=mic]").click();
+  await expect(err).toBeVisible();
+
+  // Toggle back OFF: the error describes a flow the user just abandoned, so it
+  // must clear (disconfirming input: drop the showError("") on the uncheck path
+  // and this assertion fails — the notice stays visible).
+  await popup.locator("[data-act=mic]").click();
+  await expect(err).toBeHidden();
+
+  const tab = await micTab;
+  if (tab) await tab.close();
+  await popup.close();
+});
