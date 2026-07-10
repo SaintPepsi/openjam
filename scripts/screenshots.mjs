@@ -68,9 +68,16 @@ try {
   const waveform = viewer.locator("#replay .oj-waveform"); // narration → waveform strip
   await waveform.waitFor();
   await viewer.waitForTimeout(800); // replay first frame + waveform peaks paint
-  // The waveform sits under the scrub bar, below the 800px store-listing crop —
-  // scroll the player controls into view so the shot shows the audio feature.
-  await waveform.scrollIntoViewIfNeeded();
+  // The replay section is taller than the scroll viewport, so the waveform (its
+  // last element, and the audio feature this shot exists to show) sits just below
+  // the fold. Scroll the #scroll region by exactly that overflow: this lands the
+  // player controls + waveform at the bottom of the crop and clips only the top of
+  // the tall replay stage — never scrolling far enough to reveal the report below.
+  await viewer.evaluate(() => {
+    const scroll = document.getElementById("scroll");
+    const sec = document.getElementById("replay-section");
+    scroll.scrollTop += sec.getBoundingClientRect().bottom - scroll.getBoundingClientRect().bottom;
+  });
   await viewer.screenshot({ path: path.join(OUT, "viewer.png") });
 
   await viewer.locator(".row", { hasText: "counter is now" }).first().click();
