@@ -1,9 +1,9 @@
 # 05 — Single source for the popup component + tokens
 
-Depends on: [00-epic](00-epic.md)
+Depends on: [00-epic](../00-epic.md)
 
 Predecessor of [01](01-toggle-reentrancy.md), [02](02-screenshot-button.md),
-[03](03-mic-state.md), [04](04-mic-meter.md), [06](06-demo-toggle.md) — every
+[03](03-mic-state.md), [04](04-mic-meter.md), [06](../06-demo-toggle.md) — every
 ticket that edits `openjam-popup.js`. Landing 05 first means each of those edits
 one file, not two.
 
@@ -13,7 +13,7 @@ one file, not two.
 `openjam-popup.js`, and *both* copies claim to be "One source of truth"
 (`openjam-popup.js:4`, `docs/index.html:536`). Every component fix must be
 re-pasted by hand or the marketing demo drifts from the shipped popup — the
-inert demo-stop bug ([06](06-demo-toggle.md)) already ships byte-identical in
+inert demo-stop bug ([06](../06-demo-toggle.md)) already ships byte-identical in
 both copies.
 
 Dead code from the pre-component landing page also survived the redesign:

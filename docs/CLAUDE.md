@@ -8,11 +8,11 @@
 - **The `<openjam-popup>` block in `index.html` is generated.** Edit
   `openjam-popup.js` at the repo root and run `node build.mjs`; hand-edits to
   the spliced block are overwritten by the next build. (Until
-  `docs/popup-redesign-fixes/05-component-source-of-truth.md` lands, the block
+  `docs/popup-redesign-fixes/done/05-component-source-of-truth.md` lands, the block
   is a manual paste — do not edit it independently either; fix the source and
   re-sync.)
 - **`feature-set/` docs change in the same PR as the UI they describe.**
   Removing or renaming a control without updating its feature-set doc is the
-  drift documented in `docs/popup-redesign-fixes/02-screenshot-button.md`.
+  drift documented in `docs/popup-redesign-fixes/done/02-screenshot-button.md`.
 - Planned/design docs follow the root convention: epic + numbered children,
   tickets depend forward only.

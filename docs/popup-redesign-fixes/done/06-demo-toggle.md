@@ -1,6 +1,6 @@
 # 06 — Fix inert demo stop button
 
-Depends on: [00-epic](00-epic.md), [05](05-component-source-of-truth.md), [05b](05b-render-from-state.md)
+Depends on: [00-epic](../00-epic.md), [05](05-component-source-of-truth.md), [05b](05b-render-from-state.md)
 
 ## Problem
 
@@ -26,7 +26,7 @@ demo. One method, both branches live.
 - Unit or e2e against the built landing page: click the demo popup's button
   while recording → `hasAttribute("recording")` flips to false AND the visible
   label reads "Start recording" (assert the outcome, not just the attribute —
-  see [08](08-test-integrity.md)). Command + passing output in the PR.
+  see [08](../08-test-integrity.md)). Command + passing output in the PR.
 - Disconfirming input: re-inert `_demoToggle` (early return) → test fails.
 - Manual: `npm run build`, open `docs/index.html`, click stop on the hero demo,
   timer stops and label resets (screenshot).

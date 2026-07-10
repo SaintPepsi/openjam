@@ -1,6 +1,6 @@
 # 01 — Restore record-toggle re-entrancy guard
 
-Depends on: [00-epic](00-epic.md), [05](05-component-source-of-truth.md), [05b](05b-render-from-state.md)
+Depends on: [00-epic](../00-epic.md), [05](05-component-source-of-truth.md), [05b](05b-render-from-state.md)
 
 ## Problem
 

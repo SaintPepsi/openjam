@@ -21,13 +21,13 @@ The rewrite moved the popup UI into a shadow-DOM web component. In the move:
 
 | # | Ticket | Severity |
 |---|--------|----------|
-| 01 | [Restore record-toggle re-entrancy guard](01-toggle-reentrancy.md) | bug, user-facing |
-| 02 | [Restore manual screenshot capture](02-screenshot-button.md) | feature regression |
-| 03 | [Mic narration state recovery](03-mic-state.md) | bug, user-facing |
-| 04 | [Wire or gate the mic level meter](04-mic-meter.md) | bug + perf |
-| 05 | [Single source for the popup component + tokens](05-component-source-of-truth.md) | refactor |
-| 05b | [Render the component from state](05b-render-from-state.md) | refactor |
-| 06 | [Fix inert demo stop button](06-demo-toggle.md) | bug, landing page |
+| 01 | [Restore record-toggle re-entrancy guard](done/01-toggle-reentrancy.md) | bug, user-facing |
+| 02 | [Restore manual screenshot capture](done/02-screenshot-button.md) | feature regression |
+| 03 | [Mic narration state recovery](done/03-mic-state.md) | bug, user-facing |
+| 04 | [Wire or gate the mic level meter](done/04-mic-meter.md) | bug + perf |
+| 05 | [Single source for the popup component + tokens](done/05-component-source-of-truth.md) | refactor |
+| 05b | [Render the component from state](done/05b-render-from-state.md) | refactor |
+| 06 | [Fix inert demo stop button](done/06-demo-toggle.md) | bug, landing page |
 | 07 | [Style standalone-audio report heading](07-audio-section-css.md) | bug, cosmetic |
 | 08 | [Re-strengthen e2e assertions](08-test-integrity.md) | test debt |
 

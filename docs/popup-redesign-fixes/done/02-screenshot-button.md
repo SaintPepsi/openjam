@@ -1,6 +1,6 @@
 # 02 — Restore manual screenshot capture
 
-Depends on: [00-epic](00-epic.md), [05](05-component-source-of-truth.md)
+Depends on: [00-epic](../00-epic.md), [05](05-component-source-of-truth.md)
 
 ## Problem
 

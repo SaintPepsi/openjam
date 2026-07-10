@@ -69,7 +69,7 @@ ways; every rule below maps to a known failure mode.
 - **`background.js` sets `session.recording = true` early**
   (`background.js:374`), before debugger attach completes. Any test reasoning
   about start/stop timing must account for that window (it's the root of
-  [01](01-toggle-reentrancy.md)).
+  [01](done/01-toggle-reentrancy.md)).
 - **Build before judging the landing page.** `npm test` runs `npm run build`
   first (root `CLAUDE.md`, Tests & CI); a stale `docs/index.html` after 05
   means you're inspecting last build's output.

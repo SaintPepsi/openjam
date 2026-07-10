@@ -1,6 +1,6 @@
 # 05b — Render the component from state (`ui = fn(state)`)
 
-Depends on: [00-epic](00-epic.md), [05](05-component-source-of-truth.md)
+Depends on: [00-epic](../00-epic.md), [05](05-component-source-of-truth.md)
 
 ## Problem
 
@@ -13,7 +13,7 @@ drift is a separate bug with a separate patch:
   started fine.
 - [03](03-mic-state.md): the switch renders ON above an empty picker.
 - [04](04-mic-meter.md): the meter shown while nothing feeds it.
-- [06](06-demo-toggle.md): the label frozen at "Stop" though `recording`
+- [06](../06-demo-toggle.md): the label frozen at "Stop" though `recording`
   flipped false.
 
 Fixing each poke in isolation leaves the next one free to drift.
