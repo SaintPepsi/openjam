@@ -303,6 +303,37 @@ test("double-click on the record toggle starts exactly one recording, no error",
   await popup.close();
 });
 
+test("demo stop button flips recording off and resets the label", async () => {
+  // Ticket 06: on the landing page the hero <openjam-popup demo> auto-starts
+  // recording (connectedCallback → _startDemo). Clicking its primary button
+  // must stop it. Before the fix, _demoToggle never cleared `recording`, so
+  // the label stayed "Stop & open report" and the REC timer kept counting.
+  const landing = await context.newPage();
+  await landing.goto(new URL("../docs/index.html", import.meta.url).href, { waitUntil: "load" });
+
+  const popup = landing.locator("openjam-popup[demo]");
+  const label = popup.locator(".row.primary .t");
+
+  // Demo auto-starts recording on connect.
+  await expect(label).toHaveText("Stop & open report");
+  expect(await popup.evaluate((el) => el.hasAttribute("recording"))).toBe(true);
+
+  // Click the real toggle via the element (the hero card's 3D tilt transform
+  // trips Playwright's mouse actionability checks).
+  await landing.evaluate(() => {
+    document
+      .querySelector("openjam-popup[demo]")
+      .shadowRoot.querySelector("[data-act=toggle]")
+      .click();
+  });
+
+  // Outcome the user sees: label resets AND recording is cleared.
+  await expect(label).toHaveText("Start recording");
+  expect(await popup.evaluate((el) => el.hasAttribute("recording"))).toBe(false);
+
+  await landing.close();
+});
+
 test("_render derives the whole display from component state (ui = fn(state))", async () => {
   // 05b: one _render() is the single place that writes display DOM — handlers
   // mutate state and call it, so the rendered UI can't drift from state. Drive

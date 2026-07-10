@@ -99,9 +99,3 @@ async function loadAudio() {
 refresh();
 loadAudio();
 setInterval(refresh, 1000);
-
-// OPTIONAL — live mic-level meter while recording:
-// the meter only shows when recording with audio on. Feed it a 0..1 level from
-// wherever the mic stream lives (offscreen/background), e.g. via a runtime message:
-//   chrome.runtime.onMessage.addListener((m) => { if (m.action === "micLevel") oj.setMicLevel(m.rms); });
-// If you don't feed it, the meter simply stays flat.

@@ -483,7 +483,6 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
  * It only renders features OpenJam actually has:
  *   • Start recording  ↔  Stop & open report
  *   • Mic narration    → a toggle that reveals the microphone device list
- *   • A live mic-level meter shown only while recording with audio on
  *   • Status (Idle / Recording + event count) and a hint line
  *
  * ── Using it in the extension (popup.html) ──────────────────────────────────
@@ -506,13 +505,10 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
  *
  *   // Poll status like the current popup does:
  *   setInterval(async () => oj.setStatus(await send('getStatus')), 1000);
- *   // While recording with audio, push the analyser level so the meter is live:
- *   //   oj.setMicLevel(rms);   // rms in 0..1
  *
  * ── Public API ──────────────────────────────────────────────────────────────
  *   .recording (bool)                 get/set recording state
  *   .setStatus({ recording, eventCount })
- *   .setMicLevel(v)                   0..1 — drives the live meter
  *   .setMics([{id,label}], selectedId)
  *   .showError(msg) / .showWarning(msg) / .clearNotices()
  *   attributes: recording, mic, demo, tilt
@@ -536,7 +532,9 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
     /* tokens:end */
     "  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif;",
     "  --mono:ui-monospace,'SF Mono',SFMono-Regular,'Cascadia Code',Menlo,Consolas,monospace;",
-    "  display:block; color:var(--fg); font-family:var(--sans);",
+    /* text-align is inherited and crosses the shadow boundary: pin it left so a
+       centered host page (the landing hero) can't center the popup's text. */
+    "  display:block; color:var(--fg); font-family:var(--sans); text-align:left;",
     "}",
     /* 3D wrapper (only tilts when [tilt] is set) */
     ".stage{perspective:1400px}",
@@ -578,26 +576,28 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
     ".mic-head{display:flex; align-items:center; gap:11px; padding:12px 13px; cursor:pointer}",
     ".mic-head .ic svg{stroke:var(--muted)}",
     ":host([mic]) .mic-head .ic svg{stroke:var(--accent)}",
+    /* label takes the free space so the mic-sub keeps its width and doesn't
+       wrap when the status column appears alongside it */
+    ".mic-txt{flex:1 1 auto; min-width:0}",
     ".mic-lbl{font-size:14px; font-weight:600}",
     ".mic-sub{display:block; font-family:var(--mono); font-size:10.5px; font-weight:500; color:var(--dim); margin-top:2px; letter-spacing:.02em}",
-    /* switch */
-    ".sw{margin-left:auto; width:36px; height:21px; border-radius:999px; background:#2a2f3a; position:relative; flex:0 0 auto; transition:background .18s ease}",
+    /* switch stacked over the live "listening…" indicator, right-aligned. The
+       column centers vertically, so the idle toggle doesn't shift when the
+       indicator (recording-only) is absent; when present it lands on the
+       mic-sub line, under the toggle. */
+    ".sw-col{flex:0 0 auto; display:flex; flex-direction:column; align-items:flex-end; gap:5px}",
+    ".sw{width:36px; height:21px; border-radius:999px; background:#2a2f3a; position:relative; flex:0 0 auto; transition:background .18s ease}",
     ".sw::after{content:''; position:absolute; top:2px; left:2px; width:17px; height:17px; border-radius:50%; background:#8b93a3; transition:transform .18s ease, background .18s ease}",
     ":host([mic]) .sw{background:var(--accent)}",
     ":host([mic]) .sw::after{transform:translateX(15px); background:#0b0d12}",
-    /* mic body (list + meter) collapses when off */
+    /* mic body (device list) collapses when off */
     ".mic-body{max-height:0; opacity:0; transition:max-height .24s ease, opacity .2s ease; padding:0 13px}",
     ":host([mic]) .mic-body{max-height:120px; opacity:1; padding-bottom:12px}",
     "select{width:100%; box-sizing:border-box; background:var(--bg); color:var(--fg); border:1px solid var(--line);",
     "  border-radius:8px; padding:7px 9px; font-size:12.5px; font-family:var(--sans); margin-bottom:4px}",
-    /* meter (live mic level) + label on one compact row — only while recording */
-    ".meter-row{display:none; align-items:center; gap:9px; padding-top:2px}",
-    ":host([recording][mic]) .meter-row{display:flex}",
-    ".meter{flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:2px; height:22px; padding:0 1px}",
-    ".meter .bar{flex:1 1 0; min-width:2px; border-radius:2px; background:var(--accent); transform:scaleY(.12); transform-origin:center; opacity:.9}",
-    ".meter-hint{font-family:var(--mono); font-size:10px; color:var(--accent); letter-spacing:.04em; white-space:nowrap; flex:0 0 auto}",
-    ".meter-hint::before{content:'\\25CF '}",
-    ":host([recording][mic]) .mic-body{max-height:150px}",
+    /* "listening…" indicator: shown beside the toggle while recording with mic on */
+    ".listening{font-family:var(--mono); font-size:10px; color:var(--accent); letter-spacing:.04em; white-space:nowrap}",
+    ".listening::before{content:'\\25CF'; margin-right:4px}",
     /* notices */
     ".notice{font-size:11.5px; border-radius:8px; padding:8px 10px; margin-top:2px; font-weight:600; line-height:1.4}",
     ".err{border:1px solid var(--red); background:rgba(248,81,73,.15); color:#ff7b72}",
@@ -607,7 +607,7 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
     "[hidden]{display:none !important}",
     "@media (prefers-reduced-motion:reduce){",
     "  :host([tilt]) .stage{animation:none}",
-    "  .card{transition:none} .dot{animation:none !important} .meter .bar{transition:none}",
+    "  .card{transition:none} .dot{animation:none !important}",
     "}",
     "</style>",
     "<div class='stage'>",
@@ -623,15 +623,14 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
     "    <div class='mic'>",
     "      <div class='mic-head' data-act='mic' role='switch' tabindex='0' aria-checked='false' aria-label='Mic narration'>",
     "        <span class='ic'><svg viewBox='0 0 24 24' aria-hidden='true'><rect x='9' y='3' width='6' height='11' rx='3'/><path d='M5 11a7 7 0 0 0 14 0M12 18v3'/></svg></span>",
-    "        <span><span class='mic-lbl'>Mic narration</span><span class='mic-sub'>Off · talk through the bug</span></span>",
-    "        <span class='sw' aria-hidden='true'></span>",
+    "        <span class='mic-txt'><span class='mic-lbl'>Mic narration</span><span class='mic-sub'>Off · talk through the bug</span></span>",
+    "        <span class='sw-col'>",
+    "          <span class='sw' aria-hidden='true'></span>",
+    "          <span class='listening' hidden>listening…</span>",
+    "        </span>",
     "      </div>",
     "      <div class='mic-body'>",
     "        <select aria-label='Microphone'></select>",
-    "        <div class='meter-row'>",
-    "          <div class='meter' aria-hidden='true'></div>",
-    "          <span class='meter-hint' hidden>listening…</span>",
-    "        </div>",
     "      </div>",
     "    </div>",
     "    <div class='notice err' hidden></div>",
@@ -641,20 +640,16 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
     "</div>"
   ].join("");
 
-  var METER_BARS = 40;
-
   class OpenJamPopup extends HTMLElement {
     static get observedAttributes() { return ["recording", "mic", "demo"]; }
 
     constructor() {
       super();
       this.attachShadow({ mode: "open" }).appendChild(TPL.content.cloneNode(true));
-      this._levels = new Array(METER_BARS).fill(0);
       this._elapsed = 0;
       this._eventCount = 0;
       this._error = "";
       this._warning = "";
-      this._raf = 0;
       this._reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     }
 
@@ -666,20 +661,11 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
       this._elMicHead = r.querySelector("[data-act=mic]");
       this._elMicSub = r.querySelector(".mic-sub");
       this._elSelect = r.querySelector("select");
-      this._elMeter = r.querySelector(".meter");
-      this._elMeterHint = r.querySelector(".meter-hint");
+      this._elListening = r.querySelector(".listening");
       this._elStLbl = r.querySelector(".st-lbl");
       this._elStMeta = r.querySelector(".st-meta");
       this._elErr = r.querySelector(".err");
       this._elWarn = r.querySelector(".warn");
-
-      // build meter bars
-      for (var i = 0; i < METER_BARS; i++) {
-        var b = document.createElement("span");
-        b.className = "bar";
-        this._elMeter.appendChild(b);
-      }
-      this._bars = Array.prototype.slice.call(this._elMeter.querySelectorAll(".bar"));
 
       // interactions
       this._elToggle.addEventListener("click", () => this._onToggle());
@@ -692,17 +678,14 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
       });
 
       this._render();
-      this._loop();
 
       if (this.hasAttribute("demo")) this._startDemo();
       if (this.hasAttribute("tilt")) this._startTilt();
     }
 
     disconnectedCallback() {
-      cancelAnimationFrame(this._raf);
-      cancelAnimationFrame(this._feedRaf);
       cancelAnimationFrame(this._tiltRaf);
-      if (this._demoTimer) clearInterval(this._demoTimer);
+      this._stopDemo();
       if (this._tiltHandler) window.removeEventListener("mousemove", this._tiltHandler);
     }
 
@@ -720,12 +703,6 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
       if ("eventCount" in s && s.eventCount != null) this._eventCount = s.eventCount;
       if (this._elToggle) this._elToggle.disabled = false; // round-trip settled: release the re-entrancy guard
       this._render();
-    }
-
-    // 0..1 level from the host's real mic analyser
-    setMicLevel(v) {
-      v = Math.max(0, Math.min(1, +v || 0));
-      this._levels.push(v); if (this._levels.length > METER_BARS) this._levels.shift();
     }
 
     setMics(list, selectedId) {
@@ -766,7 +743,6 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
       this.micEnabled = next;
       this._render();
       this._emit("oj-mic-toggle", { enabled: next });
-      if (this.hasAttribute("demo")) this._demoMic(next);
     }
 
     // ui = fn(state): the single place that writes display DOM. Every derived
@@ -790,9 +766,9 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
         this._elStMeta.textContent = "";
       }
       this._elMicSub.textContent = this.micEnabled
-        ? (rec ? "Recording your narration" : "On · talk through the bug")
+        ? (rec ? "Recording" : "On · talk through the bug")
         : "Off · talk through the bug";
-      this._elMeterHint.hidden = !(rec && this.micEnabled);
+      this._elListening.hidden = !(rec && this.micEnabled);
       // notices: err carries HTML (issue link); warn is plain text. Hidden when empty.
       this._elErr.innerHTML = this._error || "";
       this._elErr.hidden = !this._error;
@@ -805,22 +781,6 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
       return (m < 10 ? "0" : "") + m + ":" + (ss < 10 ? "0" : "") + ss;
     }
 
-    _loop() {
-      var render = () => {
-        // The meter only shows while recording with mic on; skip the invisible
-        // 40-bar repaint otherwise so an idle popup isn't working every frame.
-        if (this.recording && this.micEnabled) {
-          for (var i = 0; i < METER_BARS; i++) {
-            var v = this._levels[i] || 0;
-            this._bars[i].style.transform = "scaleY(" + (0.12 + v * 0.88).toFixed(3) + ")";
-            this._bars[i].style.opacity = (0.45 + v * 0.55).toFixed(2);
-          }
-        }
-        this._raf = requestAnimationFrame(render);
-      };
-      this._raf = requestAnimationFrame(render);
-    }
-
     /* ---------- demo mode (marketing) ---------- */
     _startDemo() {
       this.recording = true;
@@ -828,33 +788,29 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
       this.setMics([{ id: "default", label: "MacBook Pro Microphone" }, { id: "ext", label: "External USB Mic" }], "default");
       this._elapsed = 14000;
       this._render();
-      // synthetic speech-cadence level feed for the meter (visual only)
-      var t0 = performance.now();
-      var feed = () => {
-        var t = (performance.now() - t0) / 1000;
-        var syll = Math.pow(Math.abs(Math.sin(t * 6.2)), 1.5);
-        var phrase = 0.5 + 0.5 * Math.sin(t * 0.9 + 1);
-        var gap = (Math.sin(t * 2.3) > 0.8) ? 0.1 : 1;
-        var lvl = this.micEnabled && this.recording ? Math.max(0.05, syll * phrase * gap) : 0;
-        this.setMicLevel(lvl);
-        this._feedRaf = requestAnimationFrame(feed);
-      };
-      this._feedRaf = requestAnimationFrame(feed);
       // running REC timer
       this._demoTimer = setInterval(() => {
         if (this.recording) { this._elapsed += 1000; this._render(); }
       }, 1000);
     }
 
-    _demoToggle() {
-      if (!this.recording) { this._elapsed = 0; this._eventCount = 0; }
-      this._render();
+    _stopDemo() {
+      if (this._demoTimer) clearInterval(this._demoTimer);
     }
 
-    _demoMic(on) {
-      // clear meter quickly when turned off
-      if (!on) this._levels = new Array(METER_BARS).fill(0);
-      this._render();
+    _demoToggle() {
+      // Demo owns its own state (no host round-trip). Stopping clears the
+      // recording flag and stops the REC timer; starting spins a fresh demo.
+      // _render reflects the flipped state either way.
+      if (this.recording) {
+        this.recording = false;
+        this._stopDemo();
+        this._elapsed = 0;
+        this._eventCount = 0;
+        this._render();
+      } else {
+        this._startDemo();
+      }
     }
 
     /* ---------- 3D tilt (marketing hero) ---------- */
