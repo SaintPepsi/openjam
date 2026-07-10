@@ -30,6 +30,8 @@ The rewrite moved the popup UI into a shadow-DOM web component. In the move:
 | 06 | [Fix inert demo stop button](done/06-demo-toggle.md) | bug, landing page |
 | 07 | [Style standalone-audio report heading](done/07-audio-section-css.md) | bug, cosmetic |
 | 08 | [Re-strengthen e2e assertions](done/08-test-integrity.md) | test debt |
+| 09 | [Execution guide for agent-driven implementation](done/09-execution-guide.md) | guide |
+| 10 | [Full screenshot tests for the landing page](done/10-docs-page-e2e-screenshots.md) | test coverage |
 
 ## Dependencies
 
