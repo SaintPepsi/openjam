@@ -43,7 +43,7 @@ try {
   // tone) + auto-granted mic, so this records a real, decodable clip — no device.
   await popup.locator("[data-act=mic]").click();
   await popup.locator("[data-act=mic][aria-checked=true]").waitFor();
-  await popup.locator("openjam-popup select").waitFor(); // mic picker revealed
+  await popup.locator("openjam-popup select option").first().waitFor({ state: "attached" }); // wait for a populated picker (>=1 option), not the always-present empty <select>
 
   const tabId = await tabIdOf(popup, fixtureServer.url);
   const started = await sendAction(popup, { action: "start", tabId });

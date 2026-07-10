@@ -219,21 +219,14 @@ test("restricted pages fail with a reportable error", async () => {
 
   // The popup's failure branch (popup.js showFailure) splits renderErrorReport's
   // output across the component's TWO notice slots: the error + GitHub link go to
-  // showError (red box), the PII warning to showWarning (gold box). Mirror that here.
-  await popup.evaluate(async (error) => {
-    const { renderErrorReport } = await import("./issue-link.js");
-    const oj = document.getElementById("oj");
-    const tmp = document.createElement("div");
-    renderErrorReport(tmp, error, {
-      version: chrome.runtime.getManifest().version,
-      userAgent: navigator.userAgent,
-    });
-    const pii = tmp.querySelector(".pii-warning");
-    const piiText = pii ? pii.textContent : "";
-    if (pii) pii.remove();
-    oj.showError(tmp.innerHTML);
-    oj.showWarning(piiText);
-  }, res.error);
+  // showError (red box), the PII warning to showWarning (gold box). Drive that
+  // REAL path rather than re-implementing it: dispatch a click on the component's
+  // record toggle. popup.js's oj-toggle handler resolves the active tab (still the
+  // restricted page, kept in front) and starts; the guard fails it and the
+  // PRODUCTION showFailure splits the error across the two slots. dispatchEvent
+  // (not .click()) avoids focusing the popup tab, so activeTabId stays restricted.
+  await restricted.bringToFront();
+  await popup.locator("openjam-popup [data-act=toggle]").dispatchEvent("click");
   await expect(popup.locator("openjam-popup .err a")).toHaveAttribute(
     "href",
     /github\.com\/SaintPepsi\/openjam\/issues\/new/,

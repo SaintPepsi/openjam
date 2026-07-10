@@ -91,6 +91,14 @@ test("audio toggle persists across popup reopen", async () => {
   // SW warms up, so give this poll extra headroom.
   await expect.poll(async () => (await getAudioSettings(popup))?.enabled, { timeout: 15_000 }).toBe(true);
 
+  // [mic] isn't enough: assert the picker is actually expanded (effective height
+  // > 0). A collapse-CSS typo would leave the host flagged but the picker at 0px.
+  expect(
+    await popup.locator("openjam-popup").evaluate(
+      (el) => el.shadowRoot.querySelector(".mic-body").getBoundingClientRect().height,
+    ),
+  ).toBeGreaterThan(0);
+
   await popup.close();
   const reopened = await openPopup(context, extensionId);
   await expect(reopened.locator("[data-act=mic]")).toHaveAttribute("aria-checked", "true");
@@ -105,9 +113,13 @@ test("[disconfirming] fresh context: toggle unchecked and mic picker hidden", as
 
   const fresh = await openPopup(context, extensionId);
   await expect(fresh.locator("[data-act=mic]")).toHaveAttribute("aria-checked", "false");
-  // Without [mic] on the host the picker stays collapsed (max-height:0) — the
-  // component's way of hiding the mic list.
-  expect(await fresh.locator("openjam-popup").evaluate((el) => el.hasAttribute("mic"))).toBe(false);
+  // Effective visibility, not just the [mic] flag: the collapsed picker measures
+  // zero height. (Asserting the flag alone stays green through a collapse-CSS typo.)
+  expect(
+    await fresh.locator("openjam-popup").evaluate(
+      (el) => el.shadowRoot.querySelector(".mic-body").getBoundingClientRect().height,
+    ),
+  ).toBe(0);
   await fresh.close();
 });
 
