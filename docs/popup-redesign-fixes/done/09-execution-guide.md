@@ -1,13 +1,22 @@
 # 09 — Execution guide for agent-driven implementation
 
-Depends on: [00-epic](00-epic.md). Read this before executing any ticket in
+Depends on: [00-epic](../00-epic.md). Read this before executing any ticket in
 this epic.
 
-> **Enforced form:** the session protocol below is gatified as the repo skill
-> `.claude/skills/fix-ticket/` — invoke `/fix-ticket` with the ticket path and
-> the sequence is enforced by `steps/gate.sh` rather than read-and-remember.
-> This prose remains the rationale; the skill is the pipeline. It exists because capable models fail these tickets in predictable
-ways; every rule below maps to a known failure mode.
+> **Enforced form:** the session protocol below is meant to run as a gated
+> pipeline — the sequence enforced by a `steps/gate.sh` dispenser rather than
+> read-and-remember. Tickets 07–10 were executed this way with the
+> `complete-ticket-workflow` skill. (An earlier `fix-ticket` skill was removed;
+> the pipeline is the enforcer, not any one skill.) This prose remains the
+> rationale: it exists because capable models fail these tickets in predictable
+> ways, and every rule below maps to a known failure mode.
+
+> **Status at close (2026-07-10):** this epic is complete. Line-number citations
+> below drifted as tickets landed (the guide expects this — verify with `grep -n`
+> before trusting one). Two notes: the `scripts/screenshots.mjs:46` visibility
+> trap was fixed by [08](08-test-integrity.md); the two-copies-of-the-component
+> trap resolved once 05 landed, so `docs/index.html` now holds a build-generated
+> block between splice markers, not a hand paste.
 
 ## Session protocol
 

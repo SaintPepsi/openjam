@@ -1,6 +1,6 @@
 # 08 — Re-strengthen e2e assertions
 
-Depends on: [00-epic](00-epic.md)
+Depends on: [00-epic](../00-epic.md)
 
 Three places where the redesign left tests asserting the mechanism (or a
 private copy of the code) instead of the user-visible outcome. Repo rule: a

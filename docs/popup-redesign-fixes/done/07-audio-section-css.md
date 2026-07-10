@@ -1,6 +1,6 @@
 # 07 — Style the standalone-audio report heading
 
-Depends on: [00-epic](00-epic.md)
+Depends on: [00-epic](../00-epic.md)
 
 ## Problem
 

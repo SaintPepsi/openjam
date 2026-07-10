@@ -28,8 +28,8 @@ The rewrite moved the popup UI into a shadow-DOM web component. In the move:
 | 05 | [Single source for the popup component + tokens](done/05-component-source-of-truth.md) | refactor |
 | 05b | [Render the component from state](done/05b-render-from-state.md) | refactor |
 | 06 | [Fix inert demo stop button](done/06-demo-toggle.md) | bug, landing page |
-| 07 | [Style standalone-audio report heading](07-audio-section-css.md) | bug, cosmetic |
-| 08 | [Re-strengthen e2e assertions](08-test-integrity.md) | test debt |
+| 07 | [Style standalone-audio report heading](done/07-audio-section-css.md) | bug, cosmetic |
+| 08 | [Re-strengthen e2e assertions](done/08-test-integrity.md) | test debt |
 
 ## Dependencies
 
@@ -71,7 +71,7 @@ No central drift-guard ticket: each ticket owns its own DRY-up and ships a
 disconfirming test that fails if its regression returns.
 
 Executing these with an agent (Opus 4.8 or otherwise)? Read
-[09-execution-guide.md](09-execution-guide.md) first — session protocol,
+[09-execution-guide.md](done/09-execution-guide.md) first — session protocol,
 decision forks that need Ian's call, and codebase-specific traps.
 
 ## Out of scope (noted, not ticketed)
