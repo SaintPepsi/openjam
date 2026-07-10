@@ -94,14 +94,14 @@ details.device[open] summary::before{transform:rotate(90deg)}
 .kv{color:var(--muted)}
 .detail img{max-width:100%;border:1px solid var(--line);border-radius:8px;margin-top:6px}
 .empty{padding:48px 22px;text-align:center;color:var(--dim);font-family:var(--mono);font-size:13px}
-`;
-
-export const REPLAY_CSS = `
-#replay-section{border-bottom:1px solid var(--line);background:var(--panel);padding:18px 20px}
 #replay-section h2,#audio-section h2{margin:0 0 12px;font-size:11px;color:var(--muted);text-transform:uppercase;
   letter-spacing:.11em;font-family:var(--mono);font-weight:600;display:flex;align-items:center;gap:9px}
 #replay-section h2::before,#audio-section h2::before{content:'';width:7px;height:7px;border-radius:50%;
   background:var(--accent);box-shadow:0 0 0 4px rgba(110,168,254,.16)}
+`;
+
+export const REPLAY_CSS = `
+#replay-section{border-bottom:1px solid var(--line);background:var(--panel);padding:18px 20px}
 #replay{display:flex;justify-content:center}
 .oj-player{max-width:1024px;width:100%}
 .oj-stage{position:relative;overflow:hidden;background:#fff;border-radius:12px 12px 0 0;border:1px solid var(--line);border-bottom:0}
