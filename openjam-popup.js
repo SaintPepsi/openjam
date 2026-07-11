@@ -114,10 +114,10 @@
        indicator (recording-only) is absent; when present it lands on the
        mic-sub line, under the toggle. */
     ".sw-col{flex:0 0 auto; display:flex; flex-direction:column; align-items:flex-end; gap:5px}",
-    ".sw{width:36px; height:21px; border-radius:999px; background:#2a2f3a; position:relative; flex:0 0 auto; transition:background .18s ease}",
-    ".sw::after{content:''; position:absolute; top:2px; left:2px; width:17px; height:17px; border-radius:50%; background:#8b93a3; transition:transform .18s ease, background .18s ease}",
+    ".sw{width:36px; height:21px; border-radius:999px; background:var(--line); position:relative; flex:0 0 auto; transition:background .18s ease}",
+    ".sw::after{content:''; position:absolute; top:2px; left:2px; width:17px; height:17px; border-radius:50%; background:var(--muted); transition:transform .18s ease, background .18s ease}",
     ":host([mic]) .sw{background:var(--accent)}",
-    ":host([mic]) .sw::after{transform:translateX(15px); background:#0b0d12}",
+    ":host([mic]) .sw::after{transform:translateX(15px); background:var(--accent-ink)}",
     /* mic body (device list) collapses when off */
     ".mic-body{max-height:0; opacity:0; transition:max-height .24s ease, opacity .2s ease; padding:0 13px}",
     ":host([mic]) .mic-body{max-height:120px; opacity:1; padding-bottom:12px}",

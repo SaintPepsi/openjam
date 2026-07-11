@@ -52,7 +52,6 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
         this._canvas.style.display = "block";
         this.appendChild(this._canvas);
         this._ctx = this._canvas.getContext("2d");
-        this._progress = this._progress || 0;
         // click → seek: emit the fraction; the PARENT maps it to time and acts.
         // Bound to `this` (stable across reattach), so set once.
         this.addEventListener("click", (e) => {

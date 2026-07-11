@@ -34,14 +34,15 @@ export function buildReportHTML(report, replayAssets) {
   // When there's a replay, the replayer drives the narration (one player) — no
   // separate audio UI. The standalone player is only for reports without a replay.
   const hasStandaloneAudio = hasAudio && !hasReplay;
-  // The engine is executable JS, not JSON — neutralise any </script> inside it.
-  const engineJs = hasReplay ? replayAssets.ENGINE_IIFE.replace(/<\/script/gi, "<\\/script") : "";
+  // Inlined JS is executable, not JSON — neutralise any </script> before embedding.
+  const forInlineScript = (js) => js.replace(/<\/script/gi, "<\\/script");
+  const engineJs = hasReplay ? forInlineScript(replayAssets.ENGINE_IIFE) : "";
   // The <oj-waveform> element definition, inlined so the replay player can create
   // one (mountReplay draws the narration waveform). Registered before that script
   // runs. The standalone narration player uses a plain <audio> and never touches
-  // <oj-waveform>, so it's only needed when there's a replay. Neutralise </script>.
+  // <oj-waveform>, so it's only needed when there's a replay.
   const inlineWaveform = hasReplay && hasAudio;
-  const waveformJs = inlineWaveform ? WAVEFORM_JS.replace(/<\/script/gi, "<\\/script") : "";
+  const waveformJs = inlineWaveform ? forInlineScript(WAVEFORM_JS) : "";
 
   return `<!doctype html>
 <html lang="en">
