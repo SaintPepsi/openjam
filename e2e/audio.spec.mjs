@@ -242,11 +242,12 @@ test("with a replay, there is no standalone audio player — the replayer drives
 });
 
 test("replay player with audio renders a waveform, volume control, and hover-time in a browser", async () => {
-  // The replay-driven player gains three audio affordances: a waveform canvas as
-  // the scrubber background (visible cue that narration exists), a volume/mute
-  // control, and a hover-timestamp tooltip. A stub replayer satisfies the engine
-  // interface; the invalid tiny data URL fails decode, so we assert the ELEMENTS
-  // exist (created before decode) rather than the drawn bars.
+  // The replay-driven player gains three audio affordances: an <oj-waveform>
+  // strip (a shared pure-view component that renders its own <canvas>; a visible
+  // cue that narration exists), a volume/mute control, and a hover-timestamp
+  // tooltip. A stub replayer satisfies the engine interface; the invalid tiny
+  // data URL fails decode, so we assert the ELEMENTS exist (the <oj-waveform> and
+  // its canvas mount before decode) rather than the drawn bars.
   const replayReport = { ...AUDIO_REPORT, rrwebEvents: [{ type: 4, timestamp: 1 }, { type: 3, timestamp: 2 }] };
   const stubAssets = {
     ENGINE_IIFE:
@@ -260,7 +261,8 @@ test("replay player with audio renders a waveform, volume control, and hover-tim
   // Original scrub bar is untouched; the waveform is a separate strip beneath it.
   await expect(page.locator("#replay .oj-progress")).toHaveCount(1);
   await expect(page.locator("#replay .oj-waveform")).toHaveCount(1);
-  await expect(page.locator("#replay .oj-waveform canvas.oj-wave")).toHaveCount(1);
+  await expect(page.locator("#replay .oj-waveform oj-waveform")).toHaveCount(1);
+  await expect(page.locator("#replay .oj-waveform oj-waveform canvas")).toHaveCount(1);
   await expect(page.locator("#replay .oj-vol")).toHaveCount(1);
   await expect(page.locator("#replay .oj-controls button.oj-icon")).toHaveCount(1);
   // Hover-time tooltip on both the scrub bar and the waveform strip.
@@ -406,7 +408,7 @@ test("[disconfirming] replay player without audio has no waveform or volume cont
   const page = await context.newPage();
   await page.setContent(html, { waitUntil: "load" });
   await expect(page.locator("#replay .oj-waveform")).toHaveCount(0);
-  await expect(page.locator("#replay canvas.oj-wave")).toHaveCount(0);
+  await expect(page.locator("#replay oj-waveform")).toHaveCount(0);
   await expect(page.locator("#replay .oj-vol")).toHaveCount(0);
   // The scrub bar and its hover-time tooltip stay — useful for replay-only reports.
   await expect(page.locator("#replay .oj-progress")).toHaveCount(1);

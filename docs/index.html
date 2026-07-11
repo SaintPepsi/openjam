@@ -69,10 +69,8 @@ p{margin:0}
 .btn-primary:hover{background:#8bbcff; color:var(--accent-ink); transform:translateY(-2px)}
 .btn-ghost{background:transparent; color:var(--fg); border-color:var(--line)}
 .btn-ghost:hover{border-color:var(--muted); background:rgba(255,255,255,.02); transform:translateY(-2px)}
-.btn .chrome{width:18px;height:18px;border-radius:50%;flex:0 0 auto;
-  background:conic-gradient(from -60deg,#ea4335 0 33%,#fbbc05 33% 50%,#34a853 50% 75%,#4285f4 75% 100%);
-  position:relative}
-.btn .chrome::after{content:"";position:absolute;inset:5.5px;border-radius:50%;background:currentColor;opacity:.92}
+.btn .cta-ic{width:18px;height:18px;flex:0 0 auto;display:inline-flex}
+.btn .cta-ic svg{width:100%;height:100%;display:block}
 @media (prefers-reduced-motion:reduce){.btn:hover{transform:none}}
 
 /* ---------- nav ---------- */
@@ -120,7 +118,7 @@ section{position:relative}
 .cursor3d{position:absolute; right:-3%; bottom:-5%; width:56px; z-index:4; filter:drop-shadow(0 14px 18px rgba(0,0,0,.6)); animation:cbob 5.5s ease-in-out infinite}
 @keyframes cbob{0%,100%{transform:translateY(0) rotate(6deg)}50%{transform:translateY(-12px) rotate(2deg)}}
 
-/* audio narration block (live: the "shift" easter-egg waveform + player) */
+/* audio narration block (live: the "shift" easter-egg <oj-waveform> + play button) */
 .narr{padding:15px 15px 17px; background:var(--panel)}
 .narr-head{display:flex; align-items:center; gap:10px; margin-bottom:12px}
 .play{width:38px;height:38px;flex:0 0 auto;border-radius:50%;border:0;cursor:pointer;
@@ -130,16 +128,6 @@ section{position:relative}
 .narr-label{font-family:var(--mono); font-size:11.5px; color:var(--muted); letter-spacing:.03em}
 .narr-label b{color:var(--accent); font-weight:600}
 .narr-tag{margin-left:auto; font-family:var(--mono); font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--dim); border:1px solid var(--line); padding:3px 7px; border-radius:20px}
-.wave{position:relative; display:flex; align-items:center; gap:2px; height:52px; padding:0 2px;
-  background:var(--bg); border:1px solid var(--line); border-radius:8px; overflow:hidden}
-.wave .bar{flex:1 1 0; min-width:2px; height:100%; border-radius:2px; background:#2f3846; transform:scaleY(.28); transform-origin:center;
-  transition:background .12s linear}
-.wave .bar.on{background:var(--accent)}
-.wave .ph{position:absolute; top:0; bottom:0; width:2px; background:rgba(255,255,255,.85); box-shadow:0 0 8px rgba(110,168,254,.9); left:0; opacity:0; border-radius:2px}
-.caption{margin-top:12px; font-size:15px; line-height:1.55; color:var(--dim); min-height:2.9em}
-.caption .w{transition:color .12s linear, background .12s linear; padding:1px 1px; border-radius:3px}
-.caption .w.said{color:var(--fg)}
-.caption .w.now{color:#fff; background:rgba(110,168,254,.22)}
 
 /* ---------- the shift ---------- */
 .shift-grid{display:grid; grid-template-columns:1fr auto 1fr; gap:0; align-items:stretch; margin-top:48px}
@@ -235,7 +223,6 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
 .reveal.d1{transition-delay:.08s}.reveal.d2{transition-delay:.16s}.reveal.d3{transition-delay:.24s}
 @media (prefers-reduced-motion:reduce){
   .reveal{opacity:1 !important; transform:none !important; transition:none !important}
-  .wave .bar{transition:none}
   .stage3d,.cursor3d{animation:none !important}
 }
 </style>
@@ -257,9 +244,7 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
       <a href="#how">How it works</a>
       <a class="gh" href="https://github.com/SaintPepsi/openjam" target="_blank" rel="noopener">GitHub</a>
     </nav>
-    <a class="btn btn-primary" href="https://chromewebstore.google.com/detail/openjam/oljdbmjhfjnhnpjcehcnkbbjdgnpjdaj" target="_blank" rel="noopener">
-      <span class="chrome" aria-hidden="true"></span> <span class="cta-label">Add to Chrome</span>
-    </a>
+    <install-cta></install-cta>
   </div>
 </header>
 
@@ -272,9 +257,7 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
     <h1 class="reveal d1">Bug reports<br>that stay<br><span style="color:var(--terra)">yours.</span></h1>
     <p class="lead reveal d2">Capture it, talk through it out loud, share one HTML file &mdash; and nothing ever leaves your machine.</p>
     <div class="hero-cta reveal d2">
-      <a class="btn btn-primary" href="https://chromewebstore.google.com/detail/openjam/oljdbmjhfjnhnpjcehcnkbbjdgnpjdaj" target="_blank" rel="noopener">
-        <span class="chrome" aria-hidden="true"></span> <span class="cta-label">Add to Chrome</span>
-      </a>
+      <install-cta></install-cta>
       <a class="btn btn-ghost" href="https://github.com/SaintPepsi/openjam" target="_blank" rel="noopener">View source</a>
     </div>
     <p class="hero-fine reveal d3">Free &middot; Open source &middot; No account &middot; Chromium, Chrome 118+</p>
@@ -325,7 +308,7 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
             </button>
             <span class="narr-label">Play the narrated repro</span>
           </div>
-          <div class="wave" id="shiftWave" role="img" aria-label="Narration waveform"></div>
+          <oj-waveform id="shiftWave" role="img" aria-label="Narration waveform" style="display:block;position:relative;height:52px;background:var(--bg);border:1px solid var(--line);border-radius:8px;overflow:hidden"></oj-waveform>
         </div>
       </div>
     </div>
@@ -414,9 +397,7 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
         <h3>Install the extension</h3>
         <p>Add OpenJam from the Chrome Web Store — one click, auto-updates. Or load the release zip unpacked.</p>
         <span class="cost">Cost: it's a <b>Chrome extension</b> · Chromium browsers, Chrome 118+</span>
-        <a class="btn btn-primary" href="https://chromewebstore.google.com/detail/openjam/oljdbmjhfjnhnpjcehcnkbbjdgnpjdaj" target="_blank" rel="noopener" style="margin-top:14px">
-          <span class="chrome" aria-hidden="true"></span> <span class="cta-label">Add to Chrome</span>
-        </a>
+        <install-cta style="margin-top:14px"></install-cta>
       </div>
       <div class="step reveal d2">
         <div class="n">2</div>
@@ -442,9 +423,7 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
       <h2>Capture the bug. Keep the file.</h2>
       <p>Add OpenJam to Chrome and your next repro stays exactly where you left it — on your machine, in one file, in your voice.</p>
       <div class="hero-cta">
-        <a class="btn btn-primary" href="https://chromewebstore.google.com/detail/openjam/oljdbmjhfjnhnpjcehcnkbbjdgnpjdaj" target="_blank" rel="noopener">
-          <span class="chrome" aria-hidden="true"></span> <span class="cta-label">Add to Chrome</span>
-        </a>
+        <install-cta></install-cta>
         <a class="btn btn-ghost" href="https://github.com/SaintPepsi/openjam" target="_blank" rel="noopener">Star it on GitHub</a>
       </div>
       <p class="fine">No account · No telemetry · GPL-3.0 · Chromium browsers, Chrome 118+</p>
@@ -844,30 +823,214 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
 
 </script>
 <!-- openjam-popup:end -->
+<!-- install-cta:start -->
+<script>
+/* ============================================================================
+ * <install-cta> — the OpenJam "Add to <browser>" install button.
+ * ----------------------------------------------------------------------------
+ * One source of truth for the install CTA: href, per-browser label, and
+ * brand logo. Spliced into docs/index.html by build.mjs (classic <script>) so
+ * every button on the page stays in sync. Light DOM on purpose — the page's
+ * .btn/.btn-primary CSS styles it, no shadow encapsulation to duplicate styles.
+ *
+ * Classic-script safe: no top-level import/export. Pure logic is exported for
+ * bun tests via a guarded module.exports at the bottom; the custom element is
+ * defined only when a DOM is present (gated behind a HTMLElement check).
+ * ========================================================================== */
+
+const CWS_URL =
+  "https://chromewebstore.google.com/detail/openjam/oljdbmjhfjnhnpjcehcnkbbjdgnpjdaj";
+
+// Brand logos, inlined from Iconify. No runtime fetch (self-contained page).
+// Sources: logos/chrome, selfhst/chromium, logos/vivaldi-icon, logos/brave.
+const ICONS = {
+  chrome:   `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 256 256"><path fill="#fff" d="M128.003 199.216c39.335 0 71.221-31.888 71.221-71.223S167.338 56.77 128.003 56.77S56.78 88.658 56.78 127.993s31.887 71.223 71.222 71.223"/><path fill="#229342" d="M35.89 92.997Q27.92 79.192 17.154 64.02a127.98 127.98 0 0 0 110.857 191.981q17.671-24.785 23.996-35.74q12.148-21.042 31.423-60.251v-.015a63.993 63.993 0 0 1-110.857.017Q46.395 111.19 35.89 92.998"/><path fill="#fbc116" d="M128.008 255.996A127.97 127.97 0 0 0 256 127.997A128 128 0 0 0 238.837 64q-36.372-3.585-53.686-3.585q-19.632 0-57.152 3.585l-.014.01a63.99 63.99 0 0 1 55.444 31.987a63.99 63.99 0 0 1-.001 64.01z"/><path fill="#1a73e8" d="M128.003 178.677c27.984 0 50.669-22.685 50.669-50.67s-22.685-50.67-50.67-50.67c-27.983 0-50.669 22.686-50.669 50.67s22.686 50.67 50.67 50.67"/><path fill="#e33b2e" d="M128.003 64.004H238.84a127.973 127.973 0 0 0-221.685.015l55.419 95.99l.015.008a63.993 63.993 0 0 1 55.415-96.014z"/></svg>`,
+  chromium: `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 512 512"><linearGradient id="SVG8VGZfeUp" x1="29.563" x2="29.418" y1="107.274" y2="208.961" gradientTransform="translate(272.363 -277.956)scale(3.7794)" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#afccfb"/><stop offset="1" stop-color="#8bb5f8"/></linearGradient><path fill="url(#SVG8VGZfeUp)" d="m256 256l110.9 64L256 512c141.4 0 256-114.6 256-256c0-46.6-12.5-90.3-34.3-128H256z"/><linearGradient id="SVGi9saKdTR" x1="-96.977" x2="-96.886" y1=".511" y2="1.996" gradientTransform="matrix(231.6257 0 0 231.6247 22710.69 -116.223)" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#1972e7"/><stop offset="1" stop-color="#1969d5"/></linearGradient><path fill="url(#SVGi9saKdTR)" d="M256 0C161.2 0 78.6 51.5 34.3 128l110.8 192L256 256V128h221.7C433.4 51.5 350.7 0 256 0"/><linearGradient id="SVGREkTJdqU" x1="-96.448" x2="-94.697" y1="-.234" y2=".777" gradientTransform="rotate(60 -9213.684 16059.277)scale(189.8637 189.864)" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#659cf6"/><stop offset="1" stop-color="#4285f4"/></linearGradient><path fill="url(#SVGREkTJdqU)" d="M0 256c0 141.4 114.6 256 256 256l110.9-192L256 256l-110.9 64L34.3 128C12.5 165.7 0 209.4 0 256"/><path fill="#fff" d="M384 256c0 70.7-57.3 128-128 128s-128-57.3-128-128s57.3-128 128-128s128 57.3 128 128"/><linearGradient id="SVGsbzv3cDc" x1="-4.47" x2="-4.189" y1="113.868" y2="168.799" gradientTransform="translate(272.363 -277.956)scale(3.7794)" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#3680f0"/><stop offset="1" stop-color="#2678ec"/></linearGradient><path fill="url(#SVGsbzv3cDc)" d="M360 256c0 57.4-46.6 104-104 104s-104-46.6-104-104s46.6-104 104-104s104 46.6 104 104"/></svg>`,
+  vivaldi:  `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 256 256"><defs><linearGradient id="SVGcEMoNdBf" x1="20.985%" x2="75.846%" y1="5.132%" y2="100.366%"><stop offset="0%" stop-opacity=".2"/><stop offset="79%" stop-opacity=".05"/></linearGradient></defs><path fill="#ef3939" d="M127.999 255.999c56.092 0 87.262 0 107.63-20.37C256 215.262 256 184.092 256 128c0-56.09 0-87.261-20.37-107.63C215.262 0 184.092 0 128 0C71.91 0 40.7 0 20.37 20.369S0 71.909 0 127.999c0 56.092 0 87.262 20.369 107.63C40.738 256 71.909 256 127.999 256"/><path fill="url(#SVGcEMoNdBf)" d="M211.221 80.633c-6.179-11.141-16.808-20.264-26.815-28.152s-19.83-12.64-32.108-16.048c-12.279-3.408-24.827-3.345-37.468-1.743s-23.52 4.488-34.56 10.851C69.232 51.904 60.658 59.695 52.936 69.83c-7.72 10.135-12.851 20.199-16.054 32.53s-4.363 25.992-2.549 38.601c1.814 12.61 4.017 24.61 10.566 35.54l.54.924l45.09 78.166q11.226.309 24.302.27h12.805c20.448.44 40.906-.165 61.292-1.812c20.404-2.237 35.061-7.25 46.286-18.548c16.509-16.506 19.634-40.106 20.212-78.283z"/><path fill="#fff" d="M195.808 60.085A95.95 95.95 0 0 0 91.226 39.316a96 96 0 0 0-43.058 35.358a96.02 96.02 0 0 0 0 106.65a96 96 0 0 0 43.058 35.359a95.95 95.95 0 0 0 104.582-20.77a95.91 95.91 0 0 0 20.863-104.682a95.9 95.9 0 0 0-20.863-31.146m-5.755 44.195a290355 290355 0 0 0-47.466 82.633a15.87 15.87 0 0 1-13.054 8.614a15.06 15.06 0 0 1-15.024-7.996c-10.003-17.23-19.93-34.575-29.855-51.883a6307 6307 0 0 1-18.152-31.6a15.958 15.958 0 0 1 12.977-24.184a15.45 15.45 0 0 1 14.637 8.268c4.48 7.726 8.883 15.452 13.287 23.179c3.205 5.563 6.294 11.125 9.577 16.611a25.1 25.1 0 0 0 8.8 9.253a25.1 25.1 0 0 0 12.21 3.727a25.604 25.604 0 0 0 27.036-22.754c0-1.043 0-2.086.232-2.627a27.05 27.05 0 0 0-2.703-11.937a15.956 15.956 0 0 1 15.864-23.422a15.95 15.95 0 0 1 11.48 7.05a16 16 0 0 1 2.471 6.444c.435 3.7-.38 7.44-2.317 10.624"/></svg>`,
+  brave:    `<svg xmlns="http://www.w3.org/2000/svg" width="0.86em" height="1em" viewBox="0 0 256 301"><defs><linearGradient id="SVGE5ozGNYt" x1="0%" x2="100.097%" y1="50.018%" y2="50.018%"><stop offset="0%" stop-color="#fff"/><stop offset="14.13%" stop-color="#fff" stop-opacity=".958"/><stop offset="100%" stop-color="#fff" stop-opacity=".7"/></linearGradient><linearGradient id="SVGXA4vbbdk" x1="-.039%" x2="100%" y1="49.982%" y2="49.982%"><stop offset="0%" stop-color="#f1f1f2"/><stop offset="9.191%" stop-color="#e4e5e6"/><stop offset="23.57%" stop-color="#d9dadb"/><stop offset="43.8%" stop-color="#d2d4d5"/><stop offset="100%" stop-color="#d0d2d3"/></linearGradient></defs><path fill="#f15a22" d="M256 97.1L246.7 72l6.4-14.4c.8-1.9.4-4-1-5.5l-17.5-17.7c-7.7-7.7-19.1-10.4-29.4-6.8l-4.9 1.7l-26.8-29l-45.3-.3h-.3L82.3.4L55.6 29.6l-4.8-1.7c-10.4-3.7-21.9-1-29.6 6.9l-17.8 18c-1.2 1.2-1.5 2.9-.9 4.4l6.7 15L0 97.3L6 120l27.2 103.3c3.1 11.9 10.3 22.3 20.4 29.5c0 0 33 23.3 65.5 44.4c2.9 1.9 5.9 3.2 9.1 3.2s6.2-1.3 9.1-3.2c36.6-24 65.5-44.5 65.5-44.5c10-7.2 17.2-17.6 20.3-29.5l27-103.3z"/><path fill="url(#SVGE5ozGNYt)" d="M34.5 227.7L0 99.5l10.1-25.1l-7-18.6l16.7-17c5.5-4.9 16.3-6.6 21.3-3.7l26.1 15l34 7.9l26.5-11l2.2 227.7c-.4 32.8 1.7 29.3-22.4 13.8L48 248.6c-6.4-6.1-11.3-13-13.5-20.9" opacity=".15"/><path fill="url(#SVGXA4vbbdk)" d="m202.2 252.246l-50.6 34.6c-14.1 7.7-20.9 15.3-22 11.6c-.9-2.9-.2-11.4-.5-24.6l-.6-222.7c.1-2.2 1.6-5.9 4.2-5.5l25.8 7.8l37.2-5.8l24.6-18.1c2.6-2 6.4-1.8 8.8.5l22 21c2 2.1 2.1 6.2.9 8.8l-6.1 11.3l10.1 26.1l-34.8 129.4c-5.4 16.1-13 20.3-19 25.6" opacity=".4"/><path fill="#fff" d="M134 184.801c-1.2-.5-2.5-.9-2.9-.9h-3.2c-.4 0-1.7.4-2.9.9l-13 5.4c-1.2.5-3.2 1.4-4.4 2l-19.6 10.2c-1.2.6-1.3 1.7-.2 2.5l17.3 12.2c1.1.8 2.8 2.1 3.8 3l7.7 6.6c1 .9 2.6 2.3 3.6 3.2l7.4 6.6c1 .9 2.6.9 3.6 0l7.6-6.6c1-.9 2.6-2.3 3.6-3.2l7.7-6.7c1-.9 2.7-2.2 3.8-3l17.3-12.3c1.1-.8 1-1.9-.2-2.5l-19.6-10c-1.2-.6-3.2-1.5-4.4-2z"/><path fill="#fff" d="M227.813 101.557c.4-1.3.4-1.8.4-1.8c0-1.3-.1-3.5-.3-4.8l-1-2.9c-.6-1.2-1.6-3.1-2.4-4.2l-11.3-16.7c-.7-1.1-2-2.8-2.9-3.9l-14.6-18.3c-.8-1-1.6-1.9-1.7-1.8h-.2s-1.1.2-2.4.4l-22.3 4.4c-1.3.3-3.4.7-4.7.9l-.4.1c-1.3.2-3.4.1-4.7-.3l-18.7-6c-1.3-.4-3.4-1-4.6-1.3c0 0-3.8-.9-6.9-.8c-3.1 0-6.9.8-6.9.8c-1.3.3-3.4.9-4.6 1.3l-18.7 6c-1.3.4-3.4.5-4.7.3l-.4-.1c-1.3-.2-3.4-.7-4.7-.9l-22.5-4.2c-1.3-.3-2.4-.4-2.4-.4h-.2c-.1 0-.9.8-1.7 1.8l-14.6 18.3c-.8 1-2.1 2.8-2.9 3.9l-11.3 16.7c-.7 1.1-1.8 3-2.4 4.2l-1 2.9c-.2 1.3-.4 3.5-.3 4.8c0 0 0 .4.4 1.8c.7 2.4 2.4 4.6 2.4 4.6c.8 1 2.3 2.7 3.2 3.6l33.1 35.2c.9 1 1.2 2.8.7 4l-6.9 16.3c-.5 1.2-.6 3.2-.1 4.5l1.9 5.1c1.6 4.3 4.3 8.1 7.9 11l6.7 5.4c1 .8 2.8 1.1 4 .5l21.2-10.1c1.2-.6 3-1.8 4-2.7l15.2-13.7c2.2-2 2.3-5.4.3-7.6l-31.9-21.5c-1.1-.7-1.5-2.3-.9-3.5l14-26.4c.6-1.2.7-3.1.2-4.3l-1.7-3.9c-.5-1.2-2-2.6-3.2-3.1l-41.1-15.4c-1.2-.5-1.2-1 .1-1.1l26.5-2.5c1.3-.1 3.4.1 4.7.4l23.6 6.6c1.3.4 2.1 1.7 1.9 3l-8.2 44.9c-.2 1.3-.2 3.1.1 4.1s1.6 1.9 2.9 2.2l16.4 3.5c1.3.3 3.4.3 4.7 0l15.3-3.5c1.3-.3 2.6-1.3 2.9-2.2s.4-2.8.1-4.1l-8.1-44.9c-.2-1.3.6-2.7 1.9-3l23.6-6.6c1.3-.4 3.4-.5 4.7-.4l26.5 2.5c1.3.1 1.4.6.1 1.1l-41.1 15.6c-1.2.5-2.7 1.8-3.2 3.1l-1.7 3.9c-.5 1.2-.5 3.2.2 4.3l14.1 26.4c.6 1.2.2 2.7-.9 3.5l-31.9 21.6c-2.1 2.1-1.9 5.6.3 7.6l15.2 13.7c1 .9 2.8 2.1 4 2.6l21.3 10.1c1.2.6 3 .3 4-.5l6.7-5.5c3.6-2.9 6.3-6.7 7.8-11l1.9-5.1c.5-1.2.4-3.3-.1-4.5l-6.9-16.3c-.5-1.2-.2-3 .7-4l33.1-35.2c.9-1 2.3-2.6 3.2-3.6c-.2-.3 1.6-2.5 2.2-4.9"/></svg>`,
+};
+
+// Data drives behaviour: add a browser = add a row. `find` returns the first
+// matching row, and Chrome is the default fallback (not a row). Current rows'
+// tests are mutually exclusive, so order is irrelevant today. It only starts to
+// matter if you add rows whose tests can BOTH match one UA (e.g. a broad
+// Chrome-token row that would shadow Vivaldi/Brave) — put the specific row first.
+const BROWSERS = [
+  { id: "vivaldi",  label: "Vivaldi",  test: (ua) => /Vivaldi/.test(ua) },
+  { id: "brave",    label: "Brave",    test: (ua, nav) => !!(nav && nav.brave) },
+  { id: "chromium", label: "Chromium", test: (ua) => /Chromium\//.test(ua) },
+];
+// Chrome is the honest default. Edge/Opera aren't in the table on purpose: they
+// have their own extension stores and CWS installs carry friction there, so they
+// fall through to "Add to Chrome" rather than promising a store we're not on.
+const DEFAULT_BROWSER = { id: "chrome", label: "Chrome" };
+
+// Pure: (ua, nav) -> {id, label, svg}. No DOM, no globals — trivially testable.
+function pickBrowser(ua, nav) {
+  const hit = BROWSERS.find((b) => b.test(ua, nav)) || DEFAULT_BROWSER;
+  return { id: hit.id, label: hit.label, svg: ICONS[hit.id] };
+}
+
+// Element defined only where a DOM exists (bun test imports this file with no
+// DOM — gating keeps pickBrowser importable without a HTMLElement shim).
+if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined") {
+  class InstallCta extends HTMLElement {
+    connectedCallback() {
+      const b = pickBrowser(navigator.userAgent, navigator);
+      // Light DOM: the rendered <a> is a normal child, so the page's global
+      // .btn / .btn-primary CSS styles it — no shadow root, no style duplication.
+      this.innerHTML =
+        `<a class="btn btn-primary" href="${CWS_URL}" target="_blank" rel="noopener">` +
+          `<span class="cta-ic" aria-hidden="true">${b.svg}</span> ` +
+          `<span class="cta-label">Add to ${b.label}</span>` +
+        `</a>`;
+    }
+  }
+  // Guard against double-registration (parity with openjam-popup.js).
+  if (!customElements.get("install-cta")) customElements.define("install-cta", InstallCta);
+}
+
+// Guarded CJS export for bun tests; invisible to the browser (module undefined).
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = { pickBrowser, BROWSERS, ICONS };
+}
+
+</script>
+<!-- install-cta:end -->
+<!-- oj-waveform:start -->
+<script>
+/* ============================================================================
+ * <oj-waveform> — the OpenJam audio waveform view.
+ * ----------------------------------------------------------------------------
+ * One source of truth for the waveform: peak extraction + canvas render + a
+ * click→seek event. A PURE VIEW — ui = fn({samples, progress}). It owns nothing
+ * about audio playback, the clock, or the timeline; each parent (the replay
+ * renderer, the landing page) keeps its own audio + clock and pushes `progress`.
+ *
+ * Spliced into docs/index.html by build.mjs and inlined into the exported report
+ * by report-builder.js (see waveform.js's WAVEFORM_JS constant). Classic-script
+ * safe: no top-level import/export; pure logic exported for bun via a guarded
+ * module.exports; the element defined only where a DOM exists.
+ * ========================================================================== */
+
+// Pure: (Float32Array channel data, bar count) -> normalized peaks[] in 0..1.
+// The single home for the algorithm that used to be copied in renderer.js and
+// the landing page. Silence → all zeros (no divide-by-zero: we normalize only
+// when there's signal).
+function extractPeaks(samples, bars) {
+  var n = Math.max(1, bars | 0);
+  var peaks = new Array(n).fill(0);
+  if (!samples || !samples.length) return peaks;
+  var block = Math.floor(samples.length / n) || 1;
+  var mx = 0;
+  for (var i = 0; i < n; i++) {
+    var start = i * block, pk = 0;
+    for (var j = 0; j < block; j++) {
+      var v = Math.abs(samples[start + j] || 0);
+      if (v > pk) pk = v;
+    }
+    peaks[i] = pk;
+    if (pk > mx) mx = pk;
+  }
+  if (mx > 0) for (var k = 0; k < n; k++) peaks[k] /= mx;
+  return peaks;
+}
+
+// Element defined only where a DOM exists (bun test imports this file with no
+// DOM — the guard keeps extractPeaks importable without an HTMLElement shim).
+if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined") {
+  class OjWaveform extends HTMLElement {
+    connectedCallback() {
+      if (!this._canvas) {
+        // A custom element defaults to display:inline, which can't size a
+        // 100%-height canvas child; force block. We do NOT set `position` — the
+        // playhead is drawn on the canvas, so nothing inside needs a positioning
+        // context, and writing it here would clobber a caller's own layout.
+        this.style.display = this.style.display || "block";
+        this._canvas = document.createElement("canvas");
+        this._canvas.style.width = "100%";
+        this._canvas.style.height = "100%";
+        this._canvas.style.display = "block";
+        this.appendChild(this._canvas);
+        this._ctx = this._canvas.getContext("2d");
+        this._progress = this._progress || 0;
+        // click → seek: emit the fraction; the PARENT maps it to time and acts.
+        // Bound to `this` (stable across reattach), so set once.
+        this.addEventListener("click", (e) => {
+          var r = this._canvas.getBoundingClientRect();
+          var frac = r.width ? Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) : 0;
+          this.dispatchEvent(new CustomEvent("oj-seek", { detail: { fraction: frac }, bubbles: true }));
+        });
+        if (typeof ResizeObserver !== "undefined") {
+          this._ro = new ResizeObserver(() => { this._measure(); this._peaks = null; this.render(); });
+        }
+      }
+      if (this._ro) this._ro.observe(this); // re-observe on every (re)connect
+      this.render();
+    }
+    disconnectedCallback() { if (this._ro) this._ro.disconnect(); } // keep the RO; just stop observing
+
+    set samples(v) { this._samples = v; this._peaks = null; this.render(); }
+    get samples() { return this._samples; }
+    set progress(v) { this._progress = Math.max(0, Math.min(1, +v || 0)); this.render(); }
+    get progress() { return this._progress; }
+
+    // Cache the box size. Read once here (and on every resize via the
+    // ResizeObserver) so render() never reads layout in the per-frame progress
+    // path — reading clientWidth there forces a synchronous reflow each frame,
+    // because the parent's scrub-bar write has already dirtied layout.
+    _measure() { this._w = this.clientWidth || 600; this._h = this.clientHeight || 44; }
+    _barCount() {
+      // width/3 clamped 60..600 — the replay's rule (renderer.js:288), now shared.
+      return Math.max(60, Math.min(600, Math.floor(this._w / 3)));
+    }
+    _colors() {
+      if (!this._colorCache) {
+        var cs = getComputedStyle(this);
+        this._colorCache = {
+          played: cs.getPropertyValue("--accent").trim(),
+          unplayed: "#3b414d", // no token consumer for the unplayed shade today (renderer.js:343)
+        };
+      }
+      return this._colorCache;
+    }
+    // Pure fn of (this._samples, this._progress, size): same inputs → same pixels.
+    render() {
+      if (!this._ctx || !this._canvas) return;
+      if (this._w == null) this._measure(); // first paint before any resize event
+      var dpr = window.devicePixelRatio || 1;
+      var cw = Math.round(this._w * dpr);
+      var chh = Math.round(this._h * dpr);
+      if (this._canvas.width !== cw || this._canvas.height !== chh) { this._canvas.width = cw; this._canvas.height = chh; }
+      var ctx = this._ctx;
+      ctx.clearRect(0, 0, cw, chh);
+      if (!this._samples) return; // fail-open: no data → empty strip
+      if (!this._peaks) this._peaks = extractPeaks(this._samples, this._barCount());
+      var c = this._colors();
+      var peaks = this._peaks, n = peaks.length, barW = cw / n, mid = chh / 2, playX = (this._progress || 0) * cw;
+      for (var i = 0; i < n; i++) {
+        var x = i * barW;
+        var h = Math.max(dpr, peaks[i] * chh * 0.85);
+        ctx.fillStyle = x < playX ? c.played : c.unplayed;
+        ctx.fillRect(x, mid - h / 2, Math.max(dpr, barW - dpr), h);
+      }
+    }
+  }
+  if (!customElements.get("oj-waveform")) customElements.define("oj-waveform", OjWaveform);
+}
+
+// Guarded CJS export for bun tests; invisible to the browser (module undefined).
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = { extractPeaks };
+}
+
+</script>
+<!-- oj-waveform:end -->
 
 <script>
 (function(){
   "use strict";
   var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-  /* ---------- relabel the install CTA to the visitor's browser ----------
-     OpenJam ships only on the Chrome Web Store. Rename "Add to Chrome" to
-     the visitor's browser ONLY where the CWS link installs with no friction:
-     Chrome, Chromium, Vivaldi and Brave. Edge and Opera have their own
-     stores and need extra steps for CWS installs (Edge: "allow extensions
-     from other stores"; Opera: the "Install Chrome Extensions" add-on), and
-     we're not on those stores — so "Add to Edge" would overpromise. They,
-     and non-Chromium browsers, keep the honest "Add to Chrome" label.
-     Order matters: Vivaldi and Brave both carry "Chrome" in their UA. */
-  var ua = navigator.userAgent, browser = null;
-  if (/Edg\//.test(ua) || /OPR\//.test(ua)) browser = null; // own stores — see above
-  else if (/Vivaldi/.test(ua)) browser = "Vivaldi";
-  else if (navigator.brave) browser = "Brave";
-  else if (/Chromium\//.test(ua)) browser = "Chromium";
-  if (browser) {
-    var labels = document.querySelectorAll(".cta-label");
-    for (var i = 0; i < labels.length; i++) labels[i].textContent = "Add to " + browser;
-  }
 
   /* ---------- nav shadow on scroll ---------- */
   var nav = document.getElementById("nav");
@@ -905,214 +1068,39 @@ footer{border-top:1px solid var(--line); padding:44px 0 60px; background:var(--b
     nums.forEach(function(n){ nio.observe(n); });
   }
 
-  /* =====================================================
-     Waveform narration player — real Web Audio, offline.
-     Both the audio and the bars come from one envelope,
-     so the waveform genuinely tracks what you hear.
-     ===================================================== */
-  function WaveformPlayer(opts){
-    var wave = document.getElementById(opts.waveId);
-    var btn = document.getElementById(opts.playId);
-    var cap = document.getElementById(opts.captionId);
-    if(!wave || !btn) return;
-
-    var words = opts.words;                 // [{t, w}]
-    var dur = opts.duration;                // seconds
-    var N = opts.bars || 56;
-
-    // ----- build bar elements + a deterministic "speech" envelope -----
-    var env = [];                           // 0..1 loudness per bar
-    for(var i=0;i<N;i++){
-      var x = i/N;
-      // speech-like: syllable ripple × slow phrase swell × light noise, with gaps
-      var syll = Math.pow(Math.abs(Math.sin(x*Math.PI*11 + 0.6)), 1.4);
-      var phrase = 0.55 + 0.45*Math.sin(x*Math.PI*2.2 + 1.1);
-      var gap = (Math.sin(x*Math.PI*5.5) > 0.86) ? 0.12 : 1;   // brief pauses
-      var jitter = 0.82 + 0.18*Math.sin(i*12.9898);
-      env.push(Math.max(0.06, Math.min(1, syll*phrase*gap*jitter)));
-    }
-    var bars = [];
-    var frag = document.createDocumentFragment();
-    for(var b=0;b<N;b++){
-      var d = document.createElement("span");
-      d.className = "bar";
-      d.style.transform = "scaleY(" + (0.18 + env[b]*0.82).toFixed(3) + ")";
-      frag.appendChild(d); bars.push(d);
-    }
-    var ph = document.createElement("span"); ph.className = "ph";
-    frag.appendChild(ph);
-    wave.appendChild(frag);
-
-    // ----- caption words -----
-    var wordEls = [];
-    if(cap){
-      cap.innerHTML = "";
-      words.forEach(function(o, idx){
-        var s = document.createElement("span"); s.className="w"; s.textContent = o.w + " ";
-        cap.appendChild(s); wordEls.push(s);
-      });
-    }
-
-    // ----- optional real audio clip: drives playback AND the waveform -----
-    // (an easter egg on the comparison card — press play, hear the clip, and
-    //  the bars are its actual peaks, not the synth envelope)
-    var audioEl = null;
-    if(opts.audioSrc){
-      audioEl = new Audio(opts.audioSrc);
-      audioEl.preload = "auto";
-      audioEl.addEventListener("ended", stop);
-      var AC0 = window.AudioContext || window.webkitAudioContext;
-      if(AC0 && window.fetch){
-        fetch(opts.audioSrc).then(function(r){ return r.arrayBuffer(); })
-          .then(function(buf){ return new AC0().decodeAudioData(buf); })
-          .then(function(audioBuf){
-            var data = audioBuf.getChannelData(0), step = Math.floor(data.length / N) || 1, peak = 0, real = [];
-            for(var i=0;i<N;i++){
-              var mx = 0;
-              for(var j=0;j<step;j++){ var v = Math.abs(data[i*step+j]||0); if(v>mx) mx=v; }
-              real.push(mx); if(mx>peak) peak=mx;
-            }
-            for(var k=0;k<N;k++){
-              env[k] = peak ? Math.max(0.06, real[k]/peak) : env[k];
-              bars[k].style.transform = "scaleY(" + (0.18 + env[k]*0.82).toFixed(3) + ")";
-            }
-          }).catch(function(){});
-      }
-    }
-
-    var ctx = null, master = null, playing = false, raf = 0, startAt = 0;
-    var playIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5l13 7-13 7z" fill="currentColor"/></svg>';
+  // Narrated-repro easter egg: play the real GTA clip through the SAME <oj-waveform>
+  // the report uses. The element shows the shape + playhead; this glue owns the
+  // audio + clock (ui = fn(state)). No synth — the marketing page demoes the real thing.
+  (function () {
+    var waveEl = document.getElementById("shiftWave");
+    var btn = document.getElementById("shiftPlay");
+    if (!waveEl || !btn) return;
+    var audio = new Audio("ah-shit-here-we-go-again.mp3");
+    audio.preload = "auto";
+    var raf = 0;
+    var playIcon = '<svg viewBox="0 0 24 24" aria-hidden="true" class="ic-play"><path d="M7 5l13 7-13 7z" fill="currentColor"/></svg>';
     var stopIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></svg>';
 
-    function ensureCtx(){
-      if(ctx) return;
-      var AC = window.AudioContext || window.webkitAudioContext;
-      if(!AC) return;
-      ctx = new AC();
-      master = ctx.createGain();
-      master.gain.value = 0.0;
-      master.connect(ctx.destination);
+    // Decode once for the shape (fail-open: no Web Audio → static empty strip, audio still plays).
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if (AC && window.fetch) {
+      fetch("ah-shit-here-we-go-again.mp3").then(function (r) { return r.arrayBuffer(); })
+        .then(function (b) { return new AC().decodeAudioData(b); })
+        .then(function (buf) { waveEl.samples = buf.getChannelData(0); })
+        .catch(function () {});
     }
-
-    // schedule a soft, speech-cadenced synth for `dur` seconds
-    function scheduleVoice(t0){
-      // low "voiced" tone shaped by the same envelope → gentle mumble, clearly a demo
-      var carrier = ctx.createOscillator();
-      carrier.type = "sawtooth";
-      carrier.frequency.value = 118;
-      // vibrato for a more organic feel
-      var lfo = ctx.createOscillator(); lfo.frequency.value = 5.2;
-      var lfoGain = ctx.createGain(); lfoGain.gain.value = 6;
-      lfo.connect(lfoGain); lfoGain.connect(carrier.frequency);
-      // formant-ish shaping
-      var lp = ctx.createBiquadFilter(); lp.type="lowpass"; lp.frequency.value=900; lp.Q.value=0.7;
-      var bp = ctx.createBiquadFilter(); bp.type="bandpass"; bp.frequency.value=1500; bp.Q.value=1.6;
-      var voiceGain = ctx.createGain(); voiceGain.gain.value = 0;
-
-      carrier.connect(lp); lp.connect(bp); bp.connect(voiceGain); voiceGain.connect(master);
-
-      // amplitude envelope from the bar data → sync of ear & eye
-      var g = voiceGain.gain;
-      g.setValueAtTime(0.0001, t0);
-      for(var i=0;i<N;i++){
-        var tt = t0 + (i/N)*dur;
-        g.linearRampToValueAtTime(0.0001 + env[i]*0.9, tt);
-      }
-      g.linearRampToValueAtTime(0.0001, t0 + dur);
-
-      // master fade in/out (keeps it gentle, no clicks)
-      master.gain.cancelScheduledValues(t0);
-      master.gain.setValueAtTime(0.0001, t0);
-      master.gain.linearRampToValueAtTime(0.09, t0 + 0.08);
-      master.gain.setValueAtTime(0.09, t0 + dur - 0.12);
-      master.gain.linearRampToValueAtTime(0.0001, t0 + dur);
-
-      carrier.start(t0); lfo.start(t0);
-      carrier.stop(t0 + dur + 0.05); lfo.stop(t0 + dur + 0.05);
+    function frame() {
+      waveEl.progress = audio.duration ? audio.currentTime / audio.duration : 0;
+      if (!audio.paused && !audio.ended) raf = requestAnimationFrame(frame);
     }
-
-    function frame(){
-      if(!playing) return;
-      var elapsed, p;
-      if(audioEl){
-        elapsed = audioEl.currentTime;
-        p = Math.min(1, elapsed / (audioEl.duration || dur));
-      } else {
-        elapsed = ctx.currentTime - startAt;
-        p = Math.min(1, elapsed / dur);
-      }
-      // playhead
-      ph.style.opacity = "1";
-      ph.style.left = (p*100) + "%";
-      // light bars up to playhead
-      var idx = Math.floor(p*N);
-      for(var i=0;i<N;i++){ bars[i].classList.toggle("on", i <= idx); }
-      // caption highlight
-      if(wordEls.length){
-        var cur = -1;
-        for(var w=0; w<words.length; w++){ if(elapsed >= words[w].t) cur = w; }
-        for(var w2=0; w2<wordEls.length; w2++){
-          wordEls[w2].classList.toggle("said", w2 < cur);
-          wordEls[w2].classList.toggle("now", w2 === cur);
-        }
-      }
-      if(p >= 1){ stop(); return; }
-      raf = requestAnimationFrame(frame);
-    }
-
-    function start(){
-      if(audioEl){
-        playing = true;
-        btn.innerHTML = stopIcon;
-        btn.setAttribute("aria-label","Stop clip");
-        try{ audioEl.currentTime = 0; }catch(e){}
-        audioEl.play();
-        raf = requestAnimationFrame(frame);
-        return;
-      }
-      ensureCtx();
-      if(!ctx){ return; }
-      if(ctx.state === "suspended") ctx.resume();
-      playing = true;
-      btn.innerHTML = stopIcon;
-      btn.setAttribute("aria-label","Stop narration");
-      startAt = ctx.currentTime + 0.02;
-      scheduleVoice(startAt);
-      raf = requestAnimationFrame(frame);
-    }
-    function stop(){
-      playing = false;
-      cancelAnimationFrame(raf);
-      if(audioEl){ try{ audioEl.pause(); audioEl.currentTime = 0; }catch(e){} }
-      if(master){ try{ master.gain.cancelScheduledValues(ctx.currentTime); master.gain.linearRampToValueAtTime(0.0001, ctx.currentTime+0.05);}catch(e){} }
-      btn.innerHTML = playIcon;
-      btn.setAttribute("aria-label","Play voice narration demo");
-      ph.style.opacity = "0"; ph.style.left="0";
-      bars.forEach(function(bb){ bb.classList.remove("on"); });
-      wordEls.forEach(function(ww){ ww.classList.remove("said","now"); });
-    }
-
-    btn.addEventListener("click", function(){ playing ? stop() : start(); });
-
-    // idle shimmer so the waveform feels alive before first play (motion-safe)
-    if(!reduceMotion){
-      var shimmerT = 0;
-      var shimmer = function(){
-        if(playing){ requestAnimationFrame(shimmer); return; }
-        shimmerT += 0.05;
-        for(var i=0;i<N;i++){
-          var s = 0.18 + env[i]*0.82 * (0.86 + 0.14*Math.sin(shimmerT + i*0.5));
-          bars[i].style.transform = "scaleY(" + s.toFixed(3) + ")";
-        }
-        requestAnimationFrame(shimmer);
-      };
-      requestAnimationFrame(shimmer);
-    }
-  }
-
-  // Easter egg: the comparison card's play button fires the GTA "ah shit, here
-  // we go again" clip, with the waveform drawn from the clip's real peaks.
-  WaveformPlayer({ waveId:"shiftWave", playId:"shiftPlay", words:[], duration:6.0, bars:44, audioSrc:"ah-shit-here-we-go-again.mp3" });
+    function stop() { audio.pause(); cancelAnimationFrame(raf); waveEl.progress = 0; btn.innerHTML = playIcon; btn.setAttribute("aria-label", "Play the narrated repro"); }
+    audio.addEventListener("ended", stop);
+    waveEl.addEventListener("oj-seek", function (e) { audio.currentTime = e.detail.fraction * (audio.duration || 0); waveEl.progress = e.detail.fraction; });
+    btn.addEventListener("click", function () {
+      if (audio.paused) { audio.currentTime = 0; audio.play().catch(stop); btn.innerHTML = stopIcon; btn.setAttribute("aria-label", "Stop the narrated repro"); raf = requestAnimationFrame(frame); }
+      else stop();
+    });
+  })();
 })();
 </script>
 </body>

@@ -117,6 +117,41 @@ test("replay preserves runtime CSS-in-JS styling (insertRule from the page)", as
   await popup.close();
 });
 
+test("in-extension viewer upgrades <oj-waveform> for an audio+replay report", async () => {
+  // Regression guard (Task 9): the in-extension viewer must register the
+  // <oj-waveform> custom element. mountReplay only does
+  // document.createElement("oj-waveform") — nothing in the viewer's module graph
+  // defines it, so viewer.html carries `<script src="waveform.js">` (which
+  // self-registers the element) before viewer.js. Without it the element never
+  // upgrades: it stays an inert 44px strip with no <canvas>, and the narration
+  // waveform silently disappears in the installed extension (background.js opens
+  // viewer.html to show every report).
+  //
+  // Disconfirming input: delete `<script src="waveform.js"></script>` from
+  // viewer.html and the canvas assertion below fails (the element never upgrades,
+  // so `oj-waveform canvas` count is 0). Confirmed by running this test with the
+  // tag removed.
+  const seed = await openPopup(context, extensionId);
+  await seed.evaluate(() => chrome.storage.local.set({ audioSettings: { enabled: true, deviceId: null } }));
+  await seed.close();
+
+  // A full recording with the fake mic on → report carries BOTH rrwebEvents
+  // (replay) and audio, the exact shape that makes mountReplay build a waveform.
+  const { viewer, popup } = await recordSession();
+  await viewer.locator("#replay .replayer-wrapper").waitFor();
+
+  // Outcome the user sees: the waveform strip's custom element is upgraded and
+  // has painted its own <canvas>. An unregistered element would have no canvas.
+  await expect(viewer.locator("#replay .oj-waveform oj-waveform canvas")).toHaveCount(1);
+
+  await viewer.close();
+  await popup.close();
+  // Reset the global audio toggle so later serial tests record without audio.
+  const reset = await openPopup(context, extensionId);
+  await reset.evaluate(() => chrome.storage.local.remove("audioSettings"));
+  await reset.close();
+});
+
 test("exported HTML is self-contained and replays offline", async () => {
   const { viewer, popup } = await recordSession();
 

@@ -22,6 +22,12 @@ const build = () => execFileSync("node", ["build.mjs"], { cwd: ROOT, stdio: "pip
 const POPUP_START = "<!-- openjam-popup:start -->";
 const POPUP_END = "<!-- openjam-popup:end -->";
 
+const CTA_START = "<!-- install-cta:start -->";
+const CTA_END = "<!-- install-cta:end -->";
+
+const WAVE_START = "<!-- oj-waveform:start -->";
+const WAVE_END = "<!-- oj-waveform:end -->";
+
 beforeAll(() => build());
 
 test("docs/index.html splices the component between markers, one copy only", () => {
@@ -73,6 +79,23 @@ test("build owns the spliced region: a hand-edit is overwritten on rebuild", () 
     writeFileSync(p(rel), before); // restore regardless of assertion outcome
     build();
   }
+});
+
+test("install-cta is spliced from one source, no hand-pasted copy", () => {
+  const html = read("docs/index.html");
+  expect(html).toContain(CTA_START);
+  expect(html).toContain(CTA_END);
+  // One class definition in the page (the spliced one) and one in source.
+  expect(html.match(/class InstallCta\b/g)?.length ?? 0).toBe(1);
+  expect(read("install-cta.js").match(/class InstallCta\b/g)?.length ?? 0).toBe(1);
+});
+
+test("oj-waveform is spliced from one source, no hand-pasted copy", () => {
+  const html = read("docs/index.html");
+  expect(html).toContain(WAVE_START);
+  expect(html).toContain(WAVE_END);
+  expect(html.match(/class OjWaveform\b/g)?.length ?? 0).toBe(1);
+  expect(read("waveform.js").match(/class OjWaveform\b/g)?.length ?? 0).toBe(1);
 });
 
 function escapeRe(s) {

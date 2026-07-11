@@ -124,7 +124,6 @@ export const REPLAY_CSS = `
 .oj-controls button.oj-icon{padding:6px 10px}
 .oj-waveform{position:relative;margin-top:10px;height:44px;background:var(--bg);border:1px solid var(--line);border-radius:10px;overflow:hidden;cursor:pointer}
 .oj-waveform .oj-hover-time{bottom:auto;top:8px}
-.oj-wave{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 `;
 
 // Mounts a session-replay player: @rrweb/replay's Replayer (the engine) plus a
@@ -187,7 +186,12 @@ export function mountReplay(container, report, ReplayerCtor) {
   var audioCtx = null, audioBuf = null, gainNode = null, srcNode = null;
   var audioVol = 1, audioMuted = false, audioPlaying = false;
   var srcStartCtx = 0, srcStartOffset = 0, curSpeed = 1;
-  var wave = null, peaks = null, hasWave = false, waveWrap = null, waveColors = null;
+  var waveWrap = null, waveEl = null;
+  // Narration clip geometry on the timeline. audioStart/replayStart are set once
+  // and never mutated, so clipStart is constant; clipDurMs() tracks the timeline
+  // refit at decode (~line 291) as the single source of the clip's length.
+  var clipStart = audioStart - replayStart;
+  function clipDurMs() { return audioBuf ? Math.round(audioBuf.duration * 1000) : (report.audio.durationMs || 0); }
 
   // ONE timeline spanning the LONGER of the replay and the narration window —
   // you usually keep talking after the screen stops changing, and that tail
@@ -244,26 +248,26 @@ export function mountReplay(container, report, ReplayerCtor) {
     controls.appendChild(muteBtn);
     controls.appendChild(vol);
 
-    // Waveform in its own strip UNDER the scrub bar (only when there's audio): a
-    // visible cue narration exists, plus a second seek surface. The scrub bar above
-    // stays the primary control, unchanged.
+    // Waveform in its own strip UNDER the scrub bar (only when there's audio): the
+    // shared <oj-waveform> view. It owns extraction + drawing; the renderer owns the
+    // clock and pushes `progress`. Click emits oj-seek -> we map the clip fraction back
+    // to timeline ms and seek.
     waveWrap = el("div", "oj-waveform");
-    wave = document.createElement("canvas");
-    wave.className = "oj-wave";
+    waveEl = document.createElement("oj-waveform");
+    waveEl.style.height = "100%"; waveEl.style.width = "100%";
     var waveTip = el("div", "oj-hover-time");
-    waveWrap.appendChild(wave);
+    waveWrap.appendChild(waveEl);
     waveWrap.appendChild(waveTip);
     player.appendChild(waveWrap);
-    waveWrap.addEventListener("click", function (e) {
-      var rect = waveWrap.getBoundingClientRect();
+    waveEl.addEventListener("oj-seek", function (e) {
       finished = false;
-      seek(((e.clientX - rect.left) / rect.width) * duration);
+      seek(clipStart + e.detail.fraction * clipDurMs());
       paint();
     });
     waveWrap.addEventListener("mousemove", function (e) {
       var rect = waveWrap.getBoundingClientRect();
       var x = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
-      waveTip.textContent = fmt((x / rect.width) * duration);
+      waveTip.textContent = fmt(clipStart + (x / rect.width) * clipDurMs());
       waveTip.style.left = x + "px";
     });
 
@@ -283,21 +287,11 @@ export function mountReplay(container, report, ReplayerCtor) {
         audioCtx.decodeAudioData(raw.buffer, function (buf) {
           audioBuf = buf;
           // The decoded length is the audible truth (the wall durationMs also
-          // counts encoder stop-latency) — refit the timeline to it.
-          duration = Math.max(total, audioStart - replayStart + Math.round(buf.duration * 1000));
-          var n = Math.max(60, Math.min(600, Math.floor((waveWrap.clientWidth || 600) / 3)));
-          var ch = buf.getChannelData(0);
-          var block = Math.floor(ch.length / n) || 1;
-          peaks = new Array(n);
-          var mx = 0.0001;
-          for (var p = 0; p < n; p++) {
-            var s = p * block, pk = 0;
-            for (var q = 0; q < block; q++) { var v = Math.abs(ch[s + q] || 0); if (v > pk) pk = v; }
-            peaks[p] = pk; if (pk > mx) mx = pk;
-          }
-          for (var r = 0; r < n; r++) peaks[r] /= mx;
-          hasWave = true;
-          var decodedMs = Math.round(buf.duration * 1000);
+          // counts encoder stop-latency) — refit the timeline to it. audioBuf is
+          // now set, so clipDurMs() reflects the decoded clip.
+          var decodedMs = clipDurMs();
+          duration = Math.max(total, clipStart + decodedMs);
+          if (waveEl) waveEl.samples = buf.getChannelData(0); // element extracts + draws
           var dEl = document.getElementById("oj-diag-decoded");
           if (dEl) dEl.textContent = decodedMs + " ms";
           var gEl = document.getElementById("oj-diag-gap");
@@ -311,42 +305,6 @@ export function mountReplay(container, report, ReplayerCtor) {
           if (gEl) gEl.textContent = "—";
         });
       } catch (e) {}
-    }
-  }
-  function drawWave(frac) {
-    if (!hasWave || !wave || !peaks || !waveWrap) return;
-    var dpr = window.devicePixelRatio || 1;
-    var cw = Math.round((waveWrap.clientWidth || 600) * dpr);
-    var chh = Math.round((waveWrap.clientHeight || 44) * dpr);
-    if (wave.width !== cw || wave.height !== chh) { wave.width = cw; wave.height = chh; }
-    var ctx = wave.getContext("2d");
-    ctx.clearRect(0, 0, cw, chh);
-    // Canvas can't read CSS vars, so pull the palette off the element's computed
-    // style once (it's constant for the element's life) — keeps the single source
-    // (tokens.css) as the only home for these colours, without a per-frame style
-    // flush. The unplayed-bar shade below has no CSS consumer, so it stays a literal.
-    if (!waveColors) {
-      var cs = getComputedStyle(wave);
-      waveColors = { accent: cs.getPropertyValue("--accent").trim(), muted: cs.getPropertyValue("--muted").trim() };
-    }
-    // The strip IS the timeline (0..duration), so the wave is drawn at the
-    // narration's true offset and scale on it — playhead, scrub bar and wave
-    // share one axis instead of the wave silently stretching to fit.
-    var audioMs = audioBuf ? audioBuf.duration * 1000 : report.audio.durationMs || 0;
-    var x0 = duration ? ((audioStart - replayStart) / duration) * cw : 0;
-    var span = duration ? (audioMs / duration) * cw : cw;
-    var n = peaks.length, barW = span / n, mid = chh / 2, playX = frac * cw;
-    for (var i = 0; i < n; i++) {
-      var x = x0 + i * barW;
-      if (x + barW < 0 || x > cw) continue;
-      var h = Math.max(dpr, peaks[i] * chh * 0.85);
-      ctx.fillStyle = x < playX ? waveColors.accent : "#3b414d";
-      ctx.fillRect(x, mid - h / 2, Math.max(dpr, barW - dpr), h);
-    }
-    if (duration > total) {
-      // tick where on-screen activity ends and narration-only tail begins
-      ctx.fillStyle = waveColors.muted;
-      ctx.fillRect((total / duration) * cw, 0, dpr, chh);
     }
   }
   function stopSrc() {
@@ -407,7 +365,10 @@ export function mountReplay(container, report, ReplayerCtor) {
     if (playing && t >= duration) { finished = true; setPlaying(false); t = duration; }
     var frac = duration ? t / duration : 0;
     fill.style.width = frac * 100 + "%";
-    drawWave(frac);
+    if (waveEl && audioBuf) {
+      var clipDur = clipDurMs();
+      waveEl.progress = clipDur ? Math.max(0, Math.min(1, (t - clipStart) / clipDur)) : 0;
+    }
     time.textContent = fmt(t) + " / " + fmt(duration);
     highlightRow(replayStart + t);
     syncAudio(t);

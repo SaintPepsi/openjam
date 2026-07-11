@@ -49,6 +49,32 @@ test("landing page structure: the six sections and their headings render", async
   await expect(page.locator("section.hero openjam-popup")).toBeVisible();
 });
 
+// Disconfirming input: change toHaveCount(4) to toHaveCount(5), or delete one
+// <install-cta> from docs/index.html and rebuild — the count assertion fails
+// (verified: toHaveCount(5) failed on ctas, "Expected: 5, Received: 4").
+test("install CTAs render a logo + label and link to the Chrome Web Store", async ({ page }) => {
+  await page.goto(url, { waitUntil: "load" });
+  const ctas = page.locator("install-cta a.btn");
+  await expect(ctas).toHaveCount(4);                    // nav, hero, step 1, final
+  const first = ctas.first();
+  await expect(first).toHaveAttribute("href", /chromewebstore\.google\.com\/detail\/openjam/);
+  await expect(first.locator(".cta-ic svg")).toBeVisible();   // real logo, not empty
+  await expect(first.locator(".cta-label")).toHaveText(/Add to Chrome/); // Chromium engine → Chrome
+});
+
+// Playwright overrides the UA per test via test.use({ userAgent }) so we drive
+// the real pickBrowser() path in the page. Disconfirming input: remove the
+// test.use line below — the default Chrome UA relabels to "Add to Chrome" and
+// this assertion fails (verified: without the spoof it read "Add to Chrome").
+test.describe("browser relabel", () => {
+  test.use({ userAgent: "Mozilla/5.0 (X11) Chrome/126.0.0.0 Safari/537.36 Vivaldi/6.7" });
+  test("Vivaldi UA relabels every CTA to 'Add to Vivaldi'", async ({ page }) => {
+    await page.goto(url, { waitUntil: "load" });
+    const labels = page.locator("install-cta .cta-label");
+    await expect(labels.first()).toHaveText("Add to Vivaldi");
+  });
+});
+
 // Disconfirming input: any structural/layout change to the page — the full-page
 // pixel diff exceeds maxDiffPixelRatio (verified: hiding #compare changed 18% of
 // pixels and the page height, well past the 0.01 threshold).
@@ -62,8 +88,10 @@ test("landing page visual structure (full-page pixel baseline)", async ({ page }
   });
   await expect(page).toHaveScreenshot("landing-full.png", {
     fullPage: true,
-    // The two JS-driven regions that never settle: the hero demo popup cycles
-    // its recording state, and #shiftWave paints an idle waveform shimmer.
+    // The two non-deterministic regions: the hero demo popup cycles its recording
+    // state, and #shiftWave is an <oj-waveform> whose <canvas> content depends on
+    // the mp3 decode/playback (here the easter-egg mp3 404s, so it stays empty) —
+    // its rendered pixels vary across environments, so mask it.
     mask: [page.locator("section.hero openjam-popup"), page.locator("#shiftWave")],
     maxDiffPixelRatio: 0.01,
   });
