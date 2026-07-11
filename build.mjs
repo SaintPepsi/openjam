@@ -63,8 +63,14 @@ landing = splice(landing, TOK_START, TOK_END, tokensCss, "docs/index.html (:root
 landing = spliceScript(landing, readFileSync("openjam-popup.js", "utf8"), "<!-- openjam-popup:start -->", "<!-- openjam-popup:end -->", "docs/index.html (component)");
 landing = spliceScript(landing, readFileSync("install-cta.js", "utf8"), "<!-- install-cta:start -->", "<!-- install-cta:end -->", "docs/index.html (install-cta)");
 landing = spliceScript(landing, waveformSrc, "<!-- oj-waveform:start -->", "<!-- oj-waveform:end -->", "docs/index.html (oj-waveform)");
+// Inline the narrated-repro clip as a base64 data URL so the easter egg's
+// shape-decode fetch works off disk too (file:// blocks fetch of a sibling
+// file). Keeps the page self-contained (docs/CLAUDE.md) — no network egress.
+const shiftAudioDataUrl = "data:audio/mpeg;base64," + readFileSync("docs/ah-shit-here-we-go-again.mp3").toString("base64");
+landing = splice(landing, "/* shift-audio:start */", "/* shift-audio:end */",
+  "\n    var SHIFT_AUDIO_SRC = " + JSON.stringify(shiftAudioDataUrl) + ";\n    ", "docs/index.html (shift-audio)");
 writeFileSync("docs/index.html", landing);
-console.log("spliced palette into 4 consumers + component + install-cta + oj-waveform into docs/index.html");
+console.log("spliced palette into 4 consumers + component + install-cta + oj-waveform + inlined shift-audio into docs/index.html");
 
 await build({
   entryPoints: ["src/rrweb-recorder.js"],
