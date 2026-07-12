@@ -117,6 +117,41 @@ test("replay preserves runtime CSS-in-JS styling (insertRule from the page)", as
   await popup.close();
 });
 
+test("in-extension viewer upgrades <oj-waveform> for an audio+replay report", async () => {
+  // Regression guard (Task 9): the in-extension viewer must register the
+  // <oj-waveform> custom element. mountReplay only does
+  // document.createElement("oj-waveform") — nothing in the viewer's module graph
+  // defines it, so viewer.html carries `<script src="waveform.js">` (which
+  // self-registers the element) before viewer.js. Without it the element never
+  // upgrades: it stays an inert 44px strip with no <canvas>, and the narration
+  // waveform silently disappears in the installed extension (background.js opens
+  // viewer.html to show every report).
+  //
+  // Disconfirming input: delete `<script src="waveform.js"></script>` from
+  // viewer.html and the canvas assertion below fails (the element never upgrades,
+  // so `oj-waveform canvas` count is 0). Confirmed by running this test with the
+  // tag removed.
+  const seed = await openPopup(context, extensionId);
+  await seed.evaluate(() => chrome.storage.local.set({ audioSettings: { enabled: true, deviceId: null } }));
+  await seed.close();
+
+  // A full recording with the fake mic on → report carries BOTH rrwebEvents
+  // (replay) and audio, the exact shape that makes mountReplay build a waveform.
+  const { viewer, popup } = await recordSession();
+  await viewer.locator("#replay .replayer-wrapper").waitFor();
+
+  // Outcome the user sees: the waveform strip's custom element is upgraded and
+  // has painted its own <canvas>. An unregistered element would have no canvas.
+  await expect(viewer.locator("#replay .oj-waveform oj-waveform canvas")).toHaveCount(1);
+
+  await viewer.close();
+  await popup.close();
+  // Reset the global audio toggle so later serial tests record without audio.
+  const reset = await openPopup(context, extensionId);
+  await reset.evaluate(() => chrome.storage.local.remove("audioSettings"));
+  await reset.close();
+});
+
 test("exported HTML is self-contained and replays offline", async () => {
   const { viewer, popup } = await recordSession();
 
@@ -217,25 +252,29 @@ test("restricted pages fail with a reportable error", async () => {
   // advice rather than a raw CDP error like "Cannot access a chrome:// URL".
   expect(res.error).toContain("only record normal web pages");
 
-  // The popup's failure branch (popup.js toggle handler) renders the error
-  // with a GitHub issue link and the PII warning.
-  await popup.evaluate(async (error) => {
-    const { renderErrorReport } = await import("./issue-link.js");
-    renderErrorReport(document.getElementById("hint"), error, {
-      version: chrome.runtime.getManifest().version,
-      userAgent: navigator.userAgent,
-    });
-  }, res.error);
-  await expect(popup.locator("#hint a")).toHaveAttribute(
+  // The popup's failure branch (popup.js showFailure) splits renderErrorReport's
+  // output across the component's TWO notice slots: the error + GitHub link go to
+  // showError (red box), the PII warning to showWarning (gold box). Drive that
+  // REAL path rather than re-implementing it: dispatch a click on the component's
+  // record toggle. popup.js's oj-toggle handler resolves the active tab (still the
+  // restricted page, kept in front) and starts; the guard fails it and the
+  // PRODUCTION showFailure splits the error across the two slots. dispatchEvent
+  // (not .click()) avoids focusing the popup tab, so activeTabId stays restricted.
+  await restricted.bringToFront();
+  await popup.locator("openjam-popup [data-act=toggle]").dispatchEvent("click");
+  await expect(popup.locator("openjam-popup .err a")).toHaveAttribute(
     "href",
     /github\.com\/SaintPepsi\/openjam\/issues\/new/,
   );
-  await expect(popup.locator(".pii-warning")).toContainText("remove any PII");
+  // The PII warning is its OWN gold notice, not fused into the red error box.
+  await expect(popup.locator("openjam-popup .warn")).toContainText("remove any PII");
+  await expect(popup.locator("openjam-popup .err .pii-warning")).toHaveCount(0);
   // The failure renders as a red error callout, not gray hint text. Visual
-  // baseline of the whole hint region (error box + report link + PII warning);
-  // its text is static, so the snapshot is deterministic across runs.
-  await expect(popup.locator("#hint .oj-error")).toBeVisible();
-  await expect(popup.locator("#hint")).toHaveScreenshot("popup-error-callout.png");
+  // baseline of both notices (red error + link, then separate gold PII box);
+  // the text is static, so the snapshot is deterministic across runs.
+  await expect(popup.locator("openjam-popup .err")).toBeVisible();
+  await expect(popup.locator("openjam-popup .warn")).toBeVisible();
+  await expect(popup.locator("openjam-popup .card")).toHaveScreenshot("popup-error-callout.png");
   await restricted.close();
   await popup.close();
 });
@@ -252,5 +291,117 @@ test("storage keeps only the newest report", async () => {
     return Object.keys(all).filter((k) => k.startsWith("report-"));
   });
   expect(reportKeys).toHaveLength(1);
+  await popup.close();
+});
+
+test("double-click on the record toggle starts exactly one recording, no error", async () => {
+  // The re-entrancy guard (openjam-popup _onToggle) must absorb a second click
+  // that lands during the async start round-trip. Without it, the second click
+  // fires a second start against the same tab and the user gets a red error
+  // over a recording that started fine (docs/popup-redesign-fixes/01).
+
+  // A recordable page must be the active tab so the toggle's start() resolves a
+  // real tabId (popup.js activeTabId → chrome.tabs.query active), not the
+  // extension page. bringToFront makes the fixture active; clicking the toggle
+  // via the element (not Playwright's mouse) keeps it that way.
+  const fixture = await context.newPage();
+  await fixture.goto(fixtureServer.url, { waitUntil: "load" });
+  const popup = await openPopup(context, extensionId);
+  await fixture.bringToFront();
+
+  // Two clicks dispatched synchronously with no await between — the exact
+  // interleaving the guard exists to handle.
+  await popup.evaluate(() => {
+    const btn = document
+      .querySelector("openjam-popup")
+      .shadowRoot.querySelector("[data-act=toggle]");
+    btn.click();
+    btn.click();
+  });
+
+  // Exactly one recording is live...
+  await expect
+    .poll(() => sendAction(popup, { action: "getStatus" }).then((s) => s.recording))
+    .toBe(true);
+  // ...and the second click produced no error notice.
+  await expect(popup.locator("openjam-popup .err")).toBeHidden();
+
+  await sendAction(popup, { action: "stop" }); // finalize so state doesn't leak
+  await fixture.close();
+  await popup.close();
+});
+
+test("demo stop button flips recording off and resets the label", async () => {
+  // Ticket 06: on the landing page the hero <openjam-popup demo> auto-starts
+  // recording (connectedCallback → _startDemo). Clicking its primary button
+  // must stop it. Before the fix, _demoToggle never cleared `recording`, so
+  // the label stayed "Stop & open report" and the REC timer kept counting.
+  const landing = await context.newPage();
+  await landing.goto(new URL("../docs/index.html", import.meta.url).href, { waitUntil: "load" });
+
+  const popup = landing.locator("openjam-popup[demo]");
+  const label = popup.locator(".row.primary .t");
+
+  // Demo auto-starts recording on connect.
+  await expect(label).toHaveText("Stop & open report");
+  expect(await popup.evaluate((el) => el.hasAttribute("recording"))).toBe(true);
+
+  // Click the real toggle via the element (the hero card's 3D tilt transform
+  // trips Playwright's mouse actionability checks).
+  await landing.evaluate(() => {
+    document
+      .querySelector("openjam-popup[demo]")
+      .shadowRoot.querySelector("[data-act=toggle]")
+      .click();
+  });
+
+  // Outcome the user sees: label resets AND recording is cleared.
+  await expect(label).toHaveText("Start recording");
+  expect(await popup.evaluate((el) => el.hasAttribute("recording"))).toBe(false);
+
+  await landing.close();
+});
+
+test("_render derives the whole display from component state (ui = fn(state))", async () => {
+  // 05b: one _render() is the single place that writes display DOM — handlers
+  // mutate state and call it, so the rendered UI can't drift from state. Drive
+  // the real _render with state and assert the DOM follows: label from
+  // `recording`, timer from `_elapsed` (demo meta), error notice hidden when the
+  // error state is empty and shown when it is set.
+  const popup = await openPopup(context, extensionId);
+
+  // label derives from `recording`
+  const label = await popup.evaluate(() => {
+    const el = document.querySelector("openjam-popup");
+    const t = () => el.shadowRoot.querySelector(".row.primary .t").textContent;
+    el.recording = false; el._render();
+    const off = t();
+    el.recording = true; el._render();
+    return { off, on: t() };
+  });
+  expect(label).toEqual({ off: "Start recording", on: "Stop & open report" });
+
+  // timer text derives from `_elapsed` (demo meta shows a running clock)
+  const timer = await popup.evaluate(() => {
+    const el = document.querySelector("openjam-popup");
+    el.setAttribute("demo", "");
+    el.recording = true; el._elapsed = 65000; el._render();
+    return el.shadowRoot.querySelector(".st-meta").textContent;
+  });
+  expect(timer).toBe("01:05");
+
+  // error notice visibility derives from the error state
+  const notice = await popup.evaluate(() => {
+    const el = document.querySelector("openjam-popup");
+    const err = () => el.shadowRoot.querySelector(".err");
+    el._error = ""; el._render();
+    const whenEmpty = err().hidden;
+    el._error = "boom"; el._render();
+    return { whenEmpty, whenSet: err().hidden, text: err().textContent };
+  });
+  expect(notice.whenEmpty).toBe(true);
+  expect(notice.whenSet).toBe(false);
+  expect(notice.text).toContain("boom");
+
   await popup.close();
 });

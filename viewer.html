@@ -4,22 +4,37 @@
 <meta charset="utf-8">
 <title>OpenJam Report</title>
 <style>
+  :root{
+    /* tokens:start */
+  --bg:#0f1115; --bg2:#0b0d12; --panel:#171a21; --panel2:#1d212b;
+  --line:#2a2f3a; --line-soft:#212632;
+  --fg:#e6e9ef; --muted:#8b93a3; --dim:#5b6472;
+  --accent:#6ea8fe; --accent2:#58a6ff; --blue:var(--accent2); --accent-ink:#0b0d12;
+  --green:#3fb950; --gold:#d29922; --orange:var(--gold); --terra:#d97757;
+  --red:#f85149; --violet:#bc8cff; --audio:#1d2b45;
+  /* tokens:end */
+  }
   html,body{height:100%;margin:0}
-  body{display:flex;flex-direction:column;background:#0f1115;color:#e6e9ef;font:13px -apple-system,BlinkMacSystemFont,sans-serif}
-  #bar{display:flex;align-items:center;gap:12px;padding:8px 14px;border-bottom:1px solid #2a2f3a;background:#171a21}
-  #bar strong{font-size:13px}
+  body{display:flex;flex-direction:column;background:var(--bg);color:var(--fg);font:13px -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,Roboto,sans-serif}
+  #bar{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#1b1f28,#141821)}
+  #bar strong{font-size:14px;font-weight:800;letter-spacing:-.01em;display:flex;align-items:center;gap:9px;white-space:nowrap;flex:0 0 auto}
+  #bar strong::before{content:'🍓🫐🍇🍒';font-size:12px;white-space:nowrap}
   #bar .spacer{flex:1}
-  #bar button{background:#6ea8fe;color:#0b0d12;border:0;border-radius:6px;padding:7px 14px;font-weight:600;cursor:pointer}
+  #bar .note{font-family:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace;font-size:11px;color:var(--dim);letter-spacing:.02em}
+  #bar button{background:var(--accent);color:var(--accent-ink);border:0;border-radius:999px;padding:8px 16px;font-weight:650;
+    cursor:pointer;box-shadow:0 8px 22px -10px rgba(110,168,254,.7);transition:background .15s ease,transform .15s ease}
+  #bar button:hover{background:#8bbcff;transform:translateY(-1px)}
   #scroll{flex:1;overflow:auto}
-  #app a,#replay a{color:#6ea8fe;display:inline-block;margin-top:6px}
-  .oj-error{margin-top:8px;padding:10px 12px;border:1px solid #f85149;border-radius:6px;background:rgba(248,81,73,.15);color:#ff7b72;font-weight:600;max-width:560px}
-  .pii-warning{margin-top:8px;padding:10px 12px;border:1px solid #d29922;border-radius:6px;background:rgba(210,153,34,.15);color:#e3b341;font-weight:600;max-width:560px}
+  #app a,#replay a{color:var(--accent);display:inline-block;margin-top:6px}
+  .oj-error{margin-top:8px;padding:11px 13px;border:1px solid var(--red);border-radius:9px;background:rgba(248,81,73,.14);color:#ff8078;font-weight:600;max-width:560px;font-size:12.5px;line-height:1.5}
+  .pii-warning{margin-top:8px;padding:11px 13px;border:1px solid var(--gold);border-radius:9px;background:rgba(210,153,34,.14);color:#e3b341;font-weight:600;max-width:560px;font-size:12.5px;line-height:1.5}
 </style>
 <link rel="stylesheet" href="dist/rrweb-replay.css">
 </head>
 <body>
   <div id="bar">
     <strong>OpenJam</strong>
+    <span class="note">self-contained · offline</span>
     <span class="spacer"></span>
     <button id="download">⬇ Download self-contained HTML</button>
   </div>
@@ -29,6 +44,7 @@
     <div id="app"></div>
   </div>
   <script src="dist/rrweb-replay.js"></script>
+  <script src="waveform.js"></script>
   <script type="module" src="viewer.js"></script>
 </body>
 </html>

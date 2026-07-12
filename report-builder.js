@@ -16,6 +16,7 @@
 
 import { renderReport, mountReplay, mountAudio, REPORT_CSS, REPLAY_CSS } from "./renderer.js";
 import { buildManifest } from "./manifest.js";
+import { WAVEFORM_JS } from "./src/generated/player-assets.js";
 
 export function buildReportHTML(report, replayAssets) {
   const meta = report.meta || {};
@@ -33,8 +34,15 @@ export function buildReportHTML(report, replayAssets) {
   // When there's a replay, the replayer drives the narration (one player) — no
   // separate audio UI. The standalone player is only for reports without a replay.
   const hasStandaloneAudio = hasAudio && !hasReplay;
-  // The engine is executable JS, not JSON — neutralise any </script> inside it.
-  const engineJs = hasReplay ? replayAssets.ENGINE_IIFE.replace(/<\/script/gi, "<\\/script") : "";
+  // Inlined JS is executable, not JSON — neutralise any </script> before embedding.
+  const forInlineScript = (js) => js.replace(/<\/script/gi, "<\\/script");
+  const engineJs = hasReplay ? forInlineScript(replayAssets.ENGINE_IIFE) : "";
+  // The <oj-waveform> element definition, inlined so the replay player can create
+  // one (mountReplay draws the narration waveform). Registered before that script
+  // runs. The standalone narration player uses a plain <audio> and never touches
+  // <oj-waveform>, so it's only needed when there's a replay.
+  const inlineWaveform = hasReplay && hasAudio;
+  const waveformJs = inlineWaveform ? forInlineScript(WAVEFORM_JS) : "";
 
   return `<!doctype html>
 <html lang="en">
@@ -56,6 +64,7 @@ ${hasStandaloneAudio ? `<div id="audio-section"><h2>Narration</h2><div id="audio
 ${renderReport.toString()}
 renderReport(document.getElementById("app"), JSON.parse(document.getElementById("openjam-data").textContent));
 </script>
+${inlineWaveform ? `<script>${waveformJs}</script>` : ""}
 ${
   hasReplay
     ? `<script>${engineJs}</script>

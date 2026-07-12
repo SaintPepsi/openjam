@@ -94,10 +94,29 @@ test("omits the audio section when report.audio is null", () => {
   expect(html.includes('id="audio-section"')).toBe(false);
 });
 
+test("always-injected CSS styles the standalone-audio heading", () => {
+  const html = buildReportHTML({ meta: {}, events: [], rrwebEvents: [], audio: { dataUrl: "data:audio/webm;base64,AA", mime: "audio/webm;codecs=opus", startWall: 1, durationMs: 10 } }, null);
+  // Standalone audio injects exactly ONE <style> (REPORT_CSS); REPLAY_CSS is absent.
+  const styleBlocks = [...html.matchAll(/<style>([\s\S]*?)<\/style>/g)].map(m => m[1]);
+  expect(styleBlocks).toHaveLength(1);                     // guards the assumption: no REPLAY_CSS here
+  expect(styleBlocks[0]).toContain("#audio-section h2{");  // CSS selector, not markup
+});
+
+test("replay export still styles the section heading after the move", () => {
+  const html = buildReportHTML(makeReport(2), replayAssets);
+  const css = [...html.matchAll(/<style>([\s\S]*?)<\/style>/g)].map(m => m[1]).join("\n");
+  expect(css).toContain("#audio-section h2{"); // now sourced from the always-injected REPORT_CSS
+});
+
+test("replay-only export (no audio) has no audio-section markup", () => {
+  const html = buildReportHTML(makeReport(2), replayAssets); // no audio key → hasStandaloneAudio false
+  expect(html.includes('id="audio-section"')).toBe(false);
+});
+
 test("no-replay export carries zero player overhead", () => {
   const withNull = buildReportHTML(makeReport(0), null);
   expect(withNull).not.toContain("UMD_MARKER");
-  expect(withNull).not.toContain("replay-section");
+  expect(withNull).not.toContain('id="replay-section"'); // no replay section markup (the shared #replay-section h2 CSS rule now ships always, harmlessly)
   // single-event streams don't mount a player either (nothing to play)
   const single = buildReportHTML(makeReport(1), replayAssets);
   expect(single).not.toContain("UMD_MARKER");

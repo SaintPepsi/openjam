@@ -8,8 +8,7 @@ OpenJam captures screenshots via the CDP `Page.captureScreenshot` domain
 ([README → How it works](../../README.md#how-it-works)):
 
 - at recording **start and stop**,
-- automatically **on every error**,
-- and **on demand** while recording.
+- automatically **on every error**.
 
 Each screenshot is placed on the same wall-clock timeline as every other event, so you can
 see the visual state at the moment something failed.

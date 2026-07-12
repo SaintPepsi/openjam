@@ -82,18 +82,26 @@ test("audio toggle persists across popup reopen", async () => {
   const popup = await openPopup(context, extensionId);
   await clearAudioSettings(popup);
 
-  // Checking the box grants the (fake) mic, saves audioSettings.enabled=true,
+  // Toggling the mic switch grants the (fake) mic, saves audioSettings.enabled=true,
   // and reveals the mic picker. --use-fake-ui-for-media-stream auto-accepts.
-  await popup.locator("#audioToggle").check();
-  await expect(popup.locator("#audioToggle")).toBeChecked();
+  await popup.locator("[data-act=mic]").click();
+  await expect(popup.locator("[data-act=mic]")).toHaveAttribute("aria-checked", "true");
   // First interaction on a freshly-launched service worker: the async change
   // handler (getUserMedia + enumerateDevices + storage.set) can lag while the
   // SW warms up, so give this poll extra headroom.
   await expect.poll(async () => (await getAudioSettings(popup))?.enabled, { timeout: 15_000 }).toBe(true);
 
+  // [mic] isn't enough: assert the picker is actually expanded (effective height
+  // > 0). A collapse-CSS typo would leave the host flagged but the picker at 0px.
+  expect(
+    await popup.locator("openjam-popup").evaluate(
+      (el) => el.shadowRoot.querySelector(".mic-body").getBoundingClientRect().height,
+    ),
+  ).toBeGreaterThan(0);
+
   await popup.close();
   const reopened = await openPopup(context, extensionId);
-  await expect(reopened.locator("#audioToggle")).toBeChecked();
+  await expect(reopened.locator("[data-act=mic]")).toHaveAttribute("aria-checked", "true");
   expect((await getAudioSettings(reopened))?.enabled).toBe(true);
   await reopened.close();
 });
@@ -104,8 +112,14 @@ test("[disconfirming] fresh context: toggle unchecked and mic picker hidden", as
   await popup.close();
 
   const fresh = await openPopup(context, extensionId);
-  await expect(fresh.locator("#audioToggle")).not.toBeChecked();
-  await expect(fresh.locator("#micSelect")).toHaveAttribute("hidden", "");
+  await expect(fresh.locator("[data-act=mic]")).toHaveAttribute("aria-checked", "false");
+  // Effective visibility, not just the [mic] flag: the collapsed picker measures
+  // zero height. (Asserting the flag alone stays green through a collapse-CSS typo.)
+  expect(
+    await fresh.locator("openjam-popup").evaluate(
+      (el) => el.shadowRoot.querySelector(".mic-body").getBoundingClientRect().height,
+    ),
+  ).toBe(0);
   await fresh.close();
 });
 
@@ -228,11 +242,12 @@ test("with a replay, there is no standalone audio player — the replayer drives
 });
 
 test("replay player with audio renders a waveform, volume control, and hover-time in a browser", async () => {
-  // The replay-driven player gains three audio affordances: a waveform canvas as
-  // the scrubber background (visible cue that narration exists), a volume/mute
-  // control, and a hover-timestamp tooltip. A stub replayer satisfies the engine
-  // interface; the invalid tiny data URL fails decode, so we assert the ELEMENTS
-  // exist (created before decode) rather than the drawn bars.
+  // The replay-driven player gains three audio affordances: an <oj-waveform>
+  // strip (a shared pure-view component that renders its own <canvas>; a visible
+  // cue that narration exists), a volume/mute control, and a hover-timestamp
+  // tooltip. A stub replayer satisfies the engine interface; the invalid tiny
+  // data URL fails decode, so we assert the ELEMENTS exist (the <oj-waveform> and
+  // its canvas mount before decode) rather than the drawn bars.
   const replayReport = { ...AUDIO_REPORT, rrwebEvents: [{ type: 4, timestamp: 1 }, { type: 3, timestamp: 2 }] };
   const stubAssets = {
     ENGINE_IIFE:
@@ -246,7 +261,8 @@ test("replay player with audio renders a waveform, volume control, and hover-tim
   // Original scrub bar is untouched; the waveform is a separate strip beneath it.
   await expect(page.locator("#replay .oj-progress")).toHaveCount(1);
   await expect(page.locator("#replay .oj-waveform")).toHaveCount(1);
-  await expect(page.locator("#replay .oj-waveform canvas.oj-wave")).toHaveCount(1);
+  await expect(page.locator("#replay .oj-waveform oj-waveform")).toHaveCount(1);
+  await expect(page.locator("#replay .oj-waveform oj-waveform canvas")).toHaveCount(1);
   await expect(page.locator("#replay .oj-vol")).toHaveCount(1);
   await expect(page.locator("#replay .oj-controls button.oj-icon")).toHaveCount(1);
   // Hover-time tooltip on both the scrub bar and the waveform strip.
@@ -392,7 +408,7 @@ test("[disconfirming] replay player without audio has no waveform or volume cont
   const page = await context.newPage();
   await page.setContent(html, { waitUntil: "load" });
   await expect(page.locator("#replay .oj-waveform")).toHaveCount(0);
-  await expect(page.locator("#replay canvas.oj-wave")).toHaveCount(0);
+  await expect(page.locator("#replay oj-waveform")).toHaveCount(0);
   await expect(page.locator("#replay .oj-vol")).toHaveCount(0);
   // The scrub bar and its hover-time tooltip stay — useful for replay-only reports.
   await expect(page.locator("#replay .oj-progress")).toHaveCount(1);
@@ -421,4 +437,64 @@ test("[disconfirming] export of a null-audio report renders no <audio> element",
   await page.setContent(html, { waitUntil: "domcontentloaded" });
   await expect(page.locator("audio")).toHaveCount(0);
   await page.close();
+});
+
+// ---- AC 5 (ticket 03): mic narration state recovery -----------------------
+// The harness launches with --use-fake-ui-for-media-stream, which makes
+// navigator.permissions.query report the mic as "granted" even after
+// context.clearPermissions(). To exercise the no-grant path we simulate a
+// missing grant at the API popup.js actually reads (permissions.query), the
+// same spirit as the harness faking the media device, then reload so
+// popup.js re-runs against it.
+async function openPopupNoGrant(seedSettings) {
+  const popup = await openPopup(context, extensionId);
+  if (seedSettings === undefined) await clearAudioSettings(popup);
+  else await setAudioSettings(popup, seedSettings);
+  await popup.addInitScript(() => {
+    const real = navigator.permissions.query.bind(navigator.permissions);
+    navigator.permissions.query = (d) =>
+      d && d.name === "microphone" ? Promise.resolve({ state: "prompt", onchange: null }) : real(d);
+  });
+  await popup.reload();
+  await popup.locator("openjam-popup").waitFor();
+  await popup.waitForFunction(() => {
+    const el = document.querySelector("openjam-popup");
+    return !!el?.shadowRoot?.querySelector("button");
+  });
+  return popup;
+}
+
+// Problem A: on a missing grant, loadAudio must not render the switch ON above
+// an empty, expanded picker. Fork (Ian to ratify): reflect the switch OFF with
+// a visible hint, rather than keep it ON and reopen the grant flow.
+test("revoked permission with audioSettings.enabled: switch OFF and a visible grant hint", async () => {
+  const popup = await openPopupNoGrant({ enabled: true, deviceId: null });
+  // The hint appears only from the fixed loadAudio path; asserting it first also
+  // proves loadAudio settled before we read the switch (default is already OFF).
+  await expect(popup.locator("openjam-popup").locator(".notice.warn")).toBeVisible();
+  await expect(popup.locator("[data-act=mic]")).toHaveAttribute("aria-checked", "false");
+  await popup.close();
+});
+
+// Problem B: the mic-toggle handler must clear the stale grant error when the
+// user toggles narration back off (and on a later successful listMics).
+test("mic grant error clears when narration is toggled back off", async () => {
+  const popup = await openPopupNoGrant();
+
+  const err = popup.locator("openjam-popup").locator(".notice.err");
+  // Toggle ON with no grant: handler opens the focused permission tab and shows
+  // the "Opening a tab to grant microphone access…" error.
+  const micTab = context.waitForEvent("page").catch(() => null);
+  await popup.locator("[data-act=mic]").click();
+  await expect(err).toBeVisible();
+
+  // Toggle back OFF: the error describes a flow the user just abandoned, so it
+  // must clear (disconfirming input: drop the showError("") on the uncheck path
+  // and this assertion fails — the notice stays visible).
+  await popup.locator("[data-act=mic]").click();
+  await expect(err).toBeHidden();
+
+  const tab = await micTab;
+  if (tab) await tab.close();
+  await popup.close();
 });

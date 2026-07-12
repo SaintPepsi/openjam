@@ -8,9 +8,11 @@ OpenJam can record **spoken microphone narration** alongside a session, so a bug
 carry your voice explaining what you did and what looked wrong — played back in sync with
 the timeline and [session replay](session-replay.md).
 
-It is **opt-in**. In the popup, a "🎙 Record audio" toggle turns it on; when enabled, a mic
-picker (`#micSelect`) lets you choose which microphone to use. Your choice is remembered
-between sessions (`chrome.storage.local` `audioSettings = { enabled, deviceId }`).
+It is **opt-in**. In the popup, a "Mic narration" switch on the `<openjam-popup>` component
+turns it on; when enabled and mic access is granted, a mic picker (a `<select>` inside the
+component's shadow DOM) lets you choose which microphone to use. Without a grant the switch
+stays OFF with a hint to turn it on to grant access. Your choice is remembered between
+sessions (`chrome.storage.local` `audioSettings = { enabled, deviceId }`).
 
 Because the MV3 service worker has no DOM (it can't run `getUserMedia`/`MediaRecorder`),
 recording happens in an **offscreen document** (`offscreen.html` / `offscreen.js`) that the
