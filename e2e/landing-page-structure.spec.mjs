@@ -86,6 +86,21 @@ test("landing page visual structure (full-page pixel baseline)", async ({ page }
   await page.addStyleTag({
     content: ".reveal{opacity:1 !important; transform:none !important; animation:none !important}",
   });
+  // The hero demo <openjam-popup> is masked (its pixels are ignored) but NOT
+  // out of flow: it sits in the hero column, so its height feeds the page
+  // height. Its demo mode re-renders on a 1s timer, each time restarting
+  // .mic-body's `max-height` transition; Playwright's sub-second stabilization
+  // shots then catch the popup at different heights, so the full-page image
+  // dimensions oscillate (~12px) and never stabilize — the real failure, not
+  // font drift. Kill transitions/animations inside the popup's shadow root so
+  // its height snaps to the settled value and holds across every re-render.
+  await page.evaluate(() => {
+    const root = document.querySelector("section.hero openjam-popup")?.shadowRoot;
+    if (!root) throw new Error("popup shadow root not found — selector drifted");
+    const style = document.createElement("style");
+    style.textContent = "*,*::before,*::after{transition:none !important; animation:none !important}";
+    root.appendChild(style);
+  });
   await expect(page).toHaveScreenshot("landing-full.png", {
     fullPage: true,
     // The two non-deterministic regions: the hero demo popup cycles its recording
