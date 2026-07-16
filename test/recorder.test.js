@@ -36,6 +36,23 @@ globalThis.window = {
   },
 };
 
+// bun's test env has fetch + URL.createObjectURL (so blob: URLs resolve) but no
+// FileReader, which the recorder's blob->data rewrite needs. Polyfill just that
+// missing global with a Blob-backed readAsDataURL, keeping fetch and the object
+// URL real — so the rewrite path (emit -> fetch(blob:) -> data: -> flush) runs
+// end-to-end, exactly as it does in the MAIN world.
+globalThis.FileReader = class {
+  readAsDataURL(blob) {
+    blob
+      .arrayBuffer()
+      .then((buf) => {
+        this.result = `data:${blob.type || "application/octet-stream"};base64,${Buffer.from(buf).toString("base64")}`;
+        this.onload && this.onload();
+      })
+      .catch((err) => this.onerror && this.onerror(err));
+  }
+};
+
 // Deliver a relay->recorder command to the recorder's message listener.
 function fromRelay(kind) {
   windowEvents.message({ source: globalThis.window, data: { __oj: FROM_RELAY, kind } });
@@ -102,4 +119,111 @@ test("pagehide flushes the partial buffer immediately (no tail loss on navigatio
   windowEvents.pagehide(); // no 500ms wait
   expect(batches().length).toBe(before + 1);
   expect(batches()[before].length).toBe(2);
+});
+
+test("rewrites a mid-recording blob: <img> src to a data: URI before the batch flushes", async () => {
+  // The real-world case (Atlassian Media): an <img> already in the snapshot gets
+  // its src set to a blob: URL mid-recording, which rrweb records verbatim as a
+  // type-3 attribute mutation. The recorder must resolve that blob: into a data:
+  // URI inside the buffered event before it posts, so the export renders offline.
+  //
+  // Disconfirming input: delete the `rewriteBlobImages(event)` call from the emit
+  // handler in src/rrweb-recorder.js and this goes red — the posted src stays blob:.
+  const before = batches().length;
+  const blobUrl = URL.createObjectURL(new Blob([new Uint8Array([137, 80, 78, 71])], { type: "image/png" }));
+  expect(blobUrl.startsWith("blob:")).toBe(true);
+
+  // type 3 (incremental), source 0 (mutation), an attributes entry setting src=blob:
+  currentEmit({
+    type: 3,
+    timestamp: 10,
+    data: { source: 0, attributes: [{ id: 1, attributes: { src: blobUrl } }] },
+  });
+  await sleep(FLUSH_WAIT_MS + 200); // flush timer (500ms) + the async rewrite
+
+  expect(batches().length).toBe(before + 1);
+  const src = batches()[before][0].data.attributes[0].attributes.src;
+  expect(src.startsWith("data:")).toBe(true); // no dead blob: left in the flushed event
+});
+
+test("rewrites a blob: <img> src inside a type-2 full-snapshot node tree", async () => {
+  // The full-snapshot entry point: a fresh page load (or the recorder's own
+  // initial snapshot) can already contain an <img> whose src is a blob: URL,
+  // with no rr_dataURL (inlineImages only stamps that onto imgs it could
+  // itself draw to canvas at snapshot time — a not-yet-loaded or
+  // cross-origin-tainted img can still reach here bare).
+  //
+  // Disconfirming input: remove the `event.type === 2 && data.node` branch
+  // from collectBlobTargets in src/rrweb-recorder.js and this goes red — the
+  // posted src stays blob:.
+  const before = batches().length;
+  const blobUrl = URL.createObjectURL(new Blob([new Uint8Array([1, 2, 3, 4])], { type: "image/png" }));
+
+  currentEmit({
+    type: 2,
+    timestamp: 20,
+    data: {
+      node: {
+        tagName: "html",
+        childNodes: [{ tagName: "img", attributes: { src: blobUrl }, childNodes: [] }],
+      },
+    },
+  });
+  await sleep(FLUSH_WAIT_MS + 200);
+
+  expect(batches().length).toBe(before + 1);
+  const src = batches()[before][0].data.node.childNodes[0].attributes.src;
+  expect(src.startsWith("data:")).toBe(true);
+});
+
+test("rewrites a blob: <img> src inside a type-3 source-0 adds subtree", async () => {
+  // The mutation-add entry point: a subtree inserted mid-recording (data.adds)
+  // can bring in a new <img> with a blob: src, distinct from both the
+  // full-snapshot path and the attribute-mutation path already covered above.
+  //
+  // Disconfirming input: remove the `data.adds` loop from collectBlobTargets
+  // in src/rrweb-recorder.js and this goes red — the posted src stays blob:.
+  const before = batches().length;
+  const blobUrl = URL.createObjectURL(new Blob([new Uint8Array([5, 6, 7, 8])], { type: "image/png" }));
+
+  currentEmit({
+    type: 3,
+    timestamp: 30,
+    data: {
+      source: 0,
+      adds: [{ parentId: 1, node: { tagName: "img", attributes: { src: blobUrl }, childNodes: [] } }],
+    },
+  });
+  await sleep(FLUSH_WAIT_MS + 200);
+
+  expect(batches().length).toBe(before + 1);
+  const src = batches()[before][0].data.adds[0].node.attributes.src;
+  expect(src.startsWith("data:")).toBe(true);
+});
+
+test("leaves a blob: <img> src untouched when rr_dataURL is already present (skip branch)", async () => {
+  // inlineImages already resolved this img at record time (rr_dataURL set) —
+  // rewriteBlobImages must not touch it, so the original blob: src (now inert,
+  // rr_dataURL is what replay actually uses) survives unchanged.
+  const before = batches().length;
+  const blobUrl = URL.createObjectURL(new Blob([new Uint8Array([9, 9, 9, 9])], { type: "image/png" }));
+
+  currentEmit({
+    type: 2,
+    timestamp: 40,
+    data: {
+      node: {
+        tagName: "html",
+        childNodes: [
+          { tagName: "img", attributes: { src: blobUrl, rr_dataURL: "data:image/png;base64,alreadydone" }, childNodes: [] },
+        ],
+      },
+    },
+  });
+  await sleep(FLUSH_WAIT_MS + 200);
+
+  expect(batches().length).toBe(before + 1);
+  const attrs = batches()[before][0].data.node.childNodes[0].attributes;
+  expect(attrs.src).toBe(blobUrl); // untouched — still the original blob: URL
+  expect(attrs.rr_dataURL).toBe("data:image/png;base64,alreadydone");
 });

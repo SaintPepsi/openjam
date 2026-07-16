@@ -335,7 +335,19 @@ async function stopAudioRecorder() {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "oj-rrweb-batch") {
     const accept = session.recording && sender.tab && sender.tab.id === session.tabId;
-    if (accept) session.rrwebEvents.push(...msg.events);
+    // The batch arrives as a JSON string (recorder stringifies it; see
+    // src/rrweb-recorder.js — the verified cliff is chrome.storage.local.set's
+    // serialization silently nulling JSON nesting deeper than ~100, DOM depth
+    // >= 48, so events travel and persist as a string end to end). Parse it back
+    // into the in-memory array here, which never touches storage directly. Guard
+    // against malformed JSON so one bad batch can't tear down the listener.
+    if (accept) {
+      try {
+        session.rrwebEvents.push(...JSON.parse(msg.eventsJson));
+      } catch (err) {
+        console.warn("OpenJam: dropped an unparseable rrweb batch", err);
+      }
+    }
     // {stop:true} tells an orphaned recorder (session ended without it being
     // told, e.g. debug banner dismissed) to stop serializing the page.
     sendResponse(accept ? { ok: true } : { stop: true });
@@ -473,7 +485,12 @@ async function finalizeRecording({ note, audio } = {}) {
     },
     device: session.device,
     events: session.events.slice().sort((a, b) => a.t - b.t),
-    rrwebEvents: session.rrwebEvents.slice().sort((a, b) => a.timestamp - b.timestamp),
+    // Store rrweb events as a JSON STRING: this is the verified cliff —
+    // chrome.storage.local.set's serialization silently nulls JSON nesting
+    // deeper than ~100 (DOM depth >= 48), so a plain array would lose deep
+    // subtrees on save. The consumers (viewer.js, report-builder.js) normalize
+    // string->array up front.
+    rrwebEvents: JSON.stringify(session.rrwebEvents.slice().sort((a, b) => a.timestamp - b.timestamp)),
     audio: audio || null,
   };
 

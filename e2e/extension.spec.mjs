@@ -39,7 +39,7 @@ const TINY_PNG =
 
 // Records the fixture with console + network + screenshot activity and
 // resolves with the viewer page. Used by the first three tests.
-async function recordSession({ injectStyle = false, blobImage = false } = {}) {
+async function recordSession({ injectStyle = false, blobImage = false, lateBlobImage = false } = {}) {
   const fixture = await context.newPage();
   await fixture.goto(fixtureServer.url, { waitUntil: "load" });
 
@@ -64,6 +64,16 @@ async function recordSession({ injectStyle = false, blobImage = false } = {}) {
       return url;
     }, TINY_PNG);
   }
+  if (lateBlobImage) {
+    // Real-world repro (Atlassian Media pattern): the <img> is present at record
+    // start with NO src — a placeholder in the full snapshot. The page only sets
+    // src = URL.createObjectURL(...) LATER, after recording begins (see below).
+    await fixture.evaluate(() => {
+      const img = document.createElement("img");
+      img.id = "lateblobimg";
+      document.body.appendChild(img); // no src yet — captured empty in the snapshot
+    });
+  }
 
   const popup = await openPopup(context, extensionId);
   const tabId = await tabIdOf(popup, fixtureServer.url);
@@ -79,6 +89,37 @@ async function recordSession({ injectStyle = false, blobImage = false } = {}) {
   for (let i = 0; i < 3; i++) await fixture.locator("#inc").click();
   await fixture.locator("#fetchBtn").click();
   await expect(fixture.locator("#counter")).toHaveText("3");
+
+  if (lateBlobImage) {
+    // Flush the full snapshot BEFORE setting the src. This is what makes the
+    // repro faithful: rrweb added a load listener to the (src-less) img at
+    // snapshot time whose closure holds the snapshot's attributes object. Our
+    // recorder flushes every 500ms via structured-clone postMessage, so once the
+    // snapshot has flushed that object is dead — a late rr_dataURL write lands on
+    // the copy we already sent away and is lost. Without this wait the blob can
+    // load within the first flush window, letting rrweb's late path sneak the
+    // rr_dataURL in and masking the bug (the very race the shipped test missed).
+    await fixture.waitForTimeout(700);
+    // Now that the snapshot is flushed, set the blob: src. rrweb records this as
+    // an attribute mutation (type 3, source 0) with the value verbatim — its
+    // inlineImages path never touches it — which is what the recorder's emit-side
+    // rewriter must convert to a data: URI. Wait for decode so there are real
+    // bytes to inline.
+    blobUrl = await fixture.evaluate(async (src) => {
+      const blob = await (await fetch(src)).blob();
+      const url = URL.createObjectURL(blob);
+      const img = document.getElementById("lateblobimg");
+      img.src = url;
+      if (!(img.complete && img.naturalWidth > 0)) {
+        await new Promise((res) => {
+          img.onload = res;
+          img.onerror = res;
+        });
+      }
+      return url;
+    }, TINY_PNG);
+  }
+
   await fixture.waitForTimeout(1200); // rrweb mutation batches flush
 
   await sendAction(popup, { action: "screenshot" });
@@ -255,6 +296,62 @@ test("exported report inlines blob:-sourced images so they render offline", asyn
   // rrweb-original-src. Soft-checked only — if a future rrweb normalizes/omits
   // this attribute, it shouldn't flake a test whose contract is "the image renders".
   if (info.orig !== null) expect(info.orig).toBe(blobUrl);
+
+  await offline.close();
+  await viewer.close();
+  await popup.close();
+  fixtureServer = await serveFixture(); // restore for later serial tests
+});
+
+test("exported report inlines blob: images that appear mid-recording", async () => {
+  // The real-world repro (Atlassian Media pattern): the <img> exists at snapshot
+  // time with NO src, and the page sets src = URL.createObjectURL(...) DURING
+  // recording. rrweb records that as an attribute mutation and copies the value
+  // verbatim — its inlineImages runs only in the node serializer, so it
+  // structurally cannot cover this case (the shipped inlineImages fix only
+  // handles imgs whose blob: src is already loaded at snapshot time). The
+  // recorder's emit-side rewriter must resolve the blob: src into a data: URI
+  // inside the buffered events before they flush, so the export renders offline.
+  //
+  // Disconfirming input: remove the emit-side rewriter from src/rrweb-recorder.js
+  // and rebuild — the replay <img> keeps its dead blob: src, naturalWidth stays
+  // 0. This is the red-first test: it FAILS against HEAD (inlineImages alone) on
+  // the naturalWidth/data: assertions, and the rewriter turns it green.
+  const { viewer, popup, blobUrl } = await recordSession({ lateBlobImage: true });
+
+  const [download] = await Promise.all([
+    viewer.waitForEvent("download"),
+    viewer.locator("#download").click(),
+  ]);
+  const file = path.join(mkdtempSync(path.join(tmpdir(), "openjam-e2e-")), "export.html");
+  await download.saveAs(file);
+
+  await fixtureServer.close(); // fully offline — a dead blob: src cannot resolve
+  const offline = await context.newPage();
+  await offline.goto("file://" + file, { waitUntil: "domcontentloaded" });
+
+  // Unlike the snapshot-complete blob test, this img has NO src at snapshot — the
+  // src arrives as a mutation event, so it only lands on the replay <img> once
+  // playback reaches it. Play the replay to the end (as a user would) so the
+  // rewritten src is applied.
+  await offline.locator(".oj-controls button", { hasText: "8x" }).click();
+  await offline.locator(".oj-controls button", { hasText: "Play" }).click();
+
+  const frame = offline.frameLocator(".replayer-wrapper iframe");
+  const img = frame.locator("#lateblobimg");
+  // Wait for it to be in the DOM, not visible: a broken image (dead blob: src)
+  // is attached but 0x0, so `state:"attached"` lets the render assertion below be
+  // the one that fails when the rewriter is absent (rather than this waitFor).
+  await img.waitFor({ state: "attached" });
+
+  // Core, gating assertions: once playback applies the mutation, a rewritten
+  // (data:) src renders; a dead blob: src leaves naturalWidth at 0. Poll — both
+  // the playback reaching the event and the decode take a moment.
+  await expect
+    .poll(() => img.evaluate((el) => el.naturalWidth), { timeout: 15000 })
+    .toBeGreaterThan(0); // it renders — no "Failed to load image"
+  const info = await img.evaluate((el) => ({ src: el.currentSrc || el.src }));
+  expect(info.src.startsWith("data:")).toBe(true); // sourced from inlined bytes, not blob:
 
   await offline.close();
   await viewer.close();

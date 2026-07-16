@@ -12,6 +12,20 @@ const ENV = { version: chrome.runtime.getManifest().version, userAgent: navigato
 const params = new URLSearchParams(location.search);
 const key = params.get("key");
 
+// A stored report's rrwebEvents may be a JSON string (new — background.js stores
+// it stringified so deep DOM survives chrome.storage.local's Mojo ~100-depth cap)
+// or a plain array (old reports, or the degraded no-replay path). Normalize to an
+// array once here so renderer.js and report-builder.js are unchanged downstream.
+function asEventArray(v) {
+  if (Array.isArray(v)) return v;
+  if (typeof v !== "string") return [];
+  try {
+    return JSON.parse(v);
+  } catch {
+    return [];
+  }
+}
+
 function fail(message) {
   const app = document.getElementById("app");
   app.style.padding = "30px";
@@ -28,6 +42,7 @@ async function load() {
   const stored = await chrome.storage.local.get(key);
   const report = stored[key];
   if (!report) return fail("Report not found (it may have been cleared).");
+  report.rrwebEvents = asEventArray(report.rrwebEvents);
 
   renderReport(document.getElementById("app"), report);
 
