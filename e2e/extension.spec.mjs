@@ -32,11 +32,39 @@ test.afterAll(async () => {
   await fixtureServer?.close();
 });
 
+// A 1x1 PNG as a data: URI — the blob's byte source is irrelevant to the bug;
+// only that the <img> is sourced from a blob: object URL (like Atlassian Media).
+const TINY_PNG =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
 // Records the fixture with console + network + screenshot activity and
 // resolves with the viewer page. Used by the first three tests.
-async function recordSession({ injectStyle = false } = {}) {
+async function recordSession({ injectStyle = false, blobImage = false } = {}) {
   const fixture = await context.newPage();
   await fixture.goto(fixtureServer.url, { waitUntil: "load" });
+
+  let blobUrl = null;
+  if (blobImage) {
+    // Faithful repro: fetch a data: PNG -> blob -> object URL -> <img>, and wait
+    // until it has actually decoded (naturalWidth > 0) so the recorder hits
+    // rrweb's synchronous inline path deterministically (no load-event race).
+    blobUrl = await fixture.evaluate(async (src) => {
+      const blob = await (await fetch(src)).blob();
+      const url = URL.createObjectURL(blob);
+      const img = document.createElement("img");
+      img.id = "blobimg";
+      img.src = url;
+      document.body.appendChild(img);
+      if (!(img.complete && img.naturalWidth > 0)) {
+        await new Promise((res) => {
+          img.onload = res;
+          img.onerror = res;
+        });
+      }
+      return url;
+    }, TINY_PNG);
+  }
+
   const popup = await openPopup(context, extensionId);
   const tabId = await tabIdOf(popup, fixtureServer.url);
 
@@ -56,7 +84,7 @@ async function recordSession({ injectStyle = false } = {}) {
   await sendAction(popup, { action: "screenshot" });
   const viewer = await stopAndOpenViewer(context, popup);
   await fixture.close();
-  return { viewer, popup };
+  return { viewer, popup, blobUrl };
 }
 
 test("captures console, network and screenshots onto one timeline", async () => {
@@ -178,6 +206,60 @@ test("exported HTML is self-contained and replays offline", async () => {
   await viewer.close();
   await popup.close();
   fixtureServer = await serveFixture(); // restore for later tests
+});
+
+test("exported report inlines blob:-sourced images so they render offline", async () => {
+  // AC1: a blob: <img> (Atlassian Media pattern) must survive into the export and
+  // render in a clean/offline tab. Asserted on the RENDERED replay image, not the
+  // raw export string: rrweb retains the original src="blob:..." attribute (adds
+  // rrweb-original-src) and the CSP meta literally contains "blob:", so a raw-string
+  // scan false-fails even with the fix.
+  //
+  // AC2 disconfirming input: remove `inlineImages: true` from src/rrweb-recorder.js
+  // and rebuild (`node build.mjs`) — the replay <img> keeps its dead blob: src,
+  // naturalWidth stays 0, image broken. CI runs `npm run build` before tests, so this
+  // e2e positive test is itself the in-CI causal lever (same rebuild-then-rerun path
+  // the unit guard pulls); the one-time manual confirmation below is belt-and-suspenders
+  // (mirrors the waveform test's comment-plus-one-run convention at
+  // e2e/extension.spec.mjs:130-133). Confirmed by hand: set inlineImages:false,
+  // node build.mjs, rerun — fails on naturalWidth > 0.
+  const { viewer, popup, blobUrl } = await recordSession({ blobImage: true });
+
+  const [download] = await Promise.all([
+    viewer.waitForEvent("download"),
+    viewer.locator("#download").click(),
+  ]);
+  const file = path.join(mkdtempSync(path.join(tmpdir(), "openjam-e2e-")), "export.html");
+  await download.saveAs(file);
+
+  await fixtureServer.close(); // fully offline — a dead blob: src cannot resolve
+  const offline = await context.newPage();
+  await offline.goto("file://" + file, { waitUntil: "domcontentloaded" });
+
+  const frame = offline.frameLocator(".replayer-wrapper iframe");
+  const img = frame.locator("#blobimg");
+  await img.waitFor();
+
+  // Core, gating assertions (decode can race the DOM attach, so poll rather than
+  // read naturalWidth off a single evaluate right after waitFor).
+  await expect
+    .poll(() => img.evaluate((el) => el.naturalWidth), { timeout: 10000 })
+    .toBeGreaterThan(0); // it renders — no "Failed to load image"
+  const info = await img.evaluate((el) => ({
+    src: el.currentSrc || el.src,
+    orig: el.getAttribute("rrweb-original-src"),
+  }));
+  expect(info.src.startsWith("data:")).toBe(true); // sourced from inlined bytes, not blob:
+
+  // Non-gating bonus signal: the Replayer swaps the captured rr_dataURL in via
+  // rrweb-original-src. Soft-checked only — if a future rrweb normalizes/omits
+  // this attribute, it shouldn't flake a test whose contract is "the image renders".
+  if (info.orig !== null) expect(info.orig).toBe(blobUrl);
+
+  await offline.close();
+  await viewer.close();
+  await popup.close();
+  fixtureServer = await serveFixture(); // restore for later serial tests
 });
 
 test("exported report: OpenJam can't phone home, but the replay may load page assets", async () => {
