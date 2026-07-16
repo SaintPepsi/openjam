@@ -66,18 +66,24 @@ test("relays a background start command to the recorder and acks it", () => {
   expect(toRecorder().slice(before)).toContain("start");
 });
 
-test("forwards recorder batches to the background as oj-rrweb-batch", () => {
+test("forwards the recorder's batch JSON string to the background verbatim (no parse)", () => {
+  // The recorder carries batches as a JSON STRING (eventsJson) so deep DOM clears
+  // Chrome's Mojo ~100-depth cap on this chrome.runtime.sendMessage hop. The relay
+  // must forward that string untouched — parsing here would re-introduce the
+  // nesting the string exists to avoid.
   const before = sent.length;
-  fromRecorder("batch", { events: [{ type: 3, timestamp: 1 }] });
+  const eventsJson = JSON.stringify([{ type: 3, timestamp: 1 }]);
+  fromRecorder("batch", { eventsJson });
   const batch = sent.slice(before).find((m) => m.type === "oj-rrweb-batch");
   expect(batch).toBeTruthy();
-  expect(batch.events.length).toBe(1);
+  expect(batch.eventsJson).toBe(eventsJson); // forwarded verbatim as a string
+  expect(JSON.parse(batch.eventsJson).length).toBe(1);
 });
 
 test("stops the recorder when the background answers a batch with {stop:true}", () => {
   env.batchResponse = { stop: true };
   const before = toRecorder().length;
-  fromRecorder("batch", { events: [{ type: 3, timestamp: 2 }] });
+  fromRecorder("batch", { eventsJson: JSON.stringify([{ type: 3, timestamp: 2 }]) });
   expect(toRecorder().slice(before)).toContain("stop");
   env.batchResponse = { ok: true };
 });

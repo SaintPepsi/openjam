@@ -57,8 +57,12 @@ globalThis.FileReader = class {
 function fromRelay(kind) {
   windowEvents.message({ source: globalThis.window, data: { __oj: FROM_RELAY, kind } });
 }
+// Batches now cross to the relay as a JSON STRING (eventsJson), not a raw array:
+// the recorder stringifies at the source so deep DOM survives Chrome's Mojo
+// ~100-depth cap on the relay's chrome.runtime.sendMessage hop. Parse it back so
+// every assertion below tests the exact same event shapes as before.
 const batches = () =>
-  posted.filter((m) => m.__oj === TO_RELAY && m.kind === "batch").map((m) => m.events);
+  posted.filter((m) => m.__oj === TO_RELAY && m.kind === "batch").map((m) => JSON.parse(m.eventsJson));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 await import("../src/rrweb-recorder.js");

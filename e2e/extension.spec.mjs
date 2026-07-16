@@ -39,9 +39,32 @@ const TINY_PNG =
 
 // Records the fixture with console + network + screenshot activity and
 // resolves with the viewer page. Used by the first three tests.
-async function recordSession({ injectStyle = false, blobImage = false, lateBlobImage = false } = {}) {
+async function recordSession({ injectStyle = false, blobImage = false, lateBlobImage = false, deepDom = false } = {}) {
   const fixture = await context.newPage();
   await fixture.goto(fixtureServer.url, { waitUntil: "load" });
+
+  if (deepDom) {
+    // Build a deeply nested DOM chain (~60 divs) ending in a marked leaf, present
+    // at snapshot time. The verified cliff is chrome.storage.local.set: its
+    // base::Value/JSON backend hard-caps nesting at ~100 and SILENTLY NULLS
+    // deeper values; a serialized rrweb node at DOM depth d sits at JSON depth
+    // 3+2d, so any subtree past depth ~48 vanishes on save. Real Jira/Confluence
+    // DOMs exceed that. The fix carries the batch as a JSON string across every
+    // hop (recorder -> relay -> background -> storage) as defense-in-depth, even
+    // though messaging itself survived the depth in isolation testing.
+    await fixture.evaluate(() => {
+      let node = document.body;
+      for (let i = 0; i < 60; i++) {
+        const div = document.createElement("div");
+        node.appendChild(div);
+        node = div;
+      }
+      const leaf = document.createElement("span");
+      leaf.id = "deepleaf";
+      leaf.textContent = "deep-leaf-alive";
+      node.appendChild(leaf);
+    });
+  }
 
   let blobUrl = null;
   if (blobImage) {
@@ -352,6 +375,50 @@ test("exported report inlines blob: images that appear mid-recording", async () 
     .toBeGreaterThan(0); // it renders — no "Failed to load image"
   const info = await img.evaluate((el) => ({ src: el.currentSrc || el.src }));
   expect(info.src.startsWith("data:")).toBe(true); // sourced from inlined bytes, not blob:
+
+  await offline.close();
+  await viewer.close();
+  await popup.close();
+  fixtureServer = await serveFixture(); // restore for later serial tests
+});
+
+test("deep DOM survives the extension messaging depth limit", async () => {
+  // The verified cliff is chrome.storage.local.set: its base::Value/JSON backend
+  // hard-caps nesting at ~100 and SILENTLY NULLS anything deeper. A serialized
+  // rrweb node at DOM depth d sits at JSON depth 3+2d, so a full-snapshot subtree
+  // past depth ~48 becomes null the moment the events are saved to storage.
+  // The nulled childNodes entry then crashes the replayer at mount (TypeError
+  // reading 'id') AND drops the deep content, so the export replays blank.
+  //
+  // Disconfirming input: revert the eventsJson string-carrying fix (post/forward
+  // raw `events` again across the relay -> background hop) and rebuild
+  // (`node build.mjs`) — the ~60-deep chain nulls out, #deepleaf never appears in
+  // the replay iframe (and the replayer throws the null-childNode TypeError). This
+  // is the red-first test: it FAILS against the pre-fix build on the leaf assertion.
+  const { viewer, popup } = await recordSession({ deepDom: true });
+
+  const [download] = await Promise.all([
+    viewer.waitForEvent("download"),
+    viewer.locator("#download").click(),
+  ]);
+  const file = path.join(mkdtempSync(path.join(tmpdir(), "openjam-e2e-")), "export.html");
+  await download.saveAs(file);
+
+  await fixtureServer.close(); // fully offline
+  const offline = await context.newPage();
+  const pageErrors = [];
+  offline.on("pageerror", (err) => pageErrors.push(String(err)));
+  await offline.goto("file://" + file, { waitUntil: "domcontentloaded" });
+
+  // (b) the deep leaf survives serialization and appears in the rebuilt replay DOM.
+  // It lives in the full snapshot, so it renders at mount (no playback needed).
+  const frame = offline.frameLocator(".replayer-wrapper iframe");
+  const leaf = frame.locator("#deepleaf");
+  await leaf.waitFor({ timeout: 15000 });
+  await expect(leaf).toHaveText("deep-leaf-alive");
+
+  // (a) the replayer mounted without the null-childNode crash.
+  expect(pageErrors.some((e) => e.includes("reading 'id'"))).toBe(false);
 
   await offline.close();
   await viewer.close();
