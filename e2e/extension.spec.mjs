@@ -32,11 +32,72 @@ test.afterAll(async () => {
   await fixtureServer?.close();
 });
 
+// A 1x1 PNG as a data: URI — the blob's byte source is irrelevant to the bug;
+// only that the <img> is sourced from a blob: object URL (like Atlassian Media).
+const TINY_PNG =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
 // Records the fixture with console + network + screenshot activity and
 // resolves with the viewer page. Used by the first three tests.
-async function recordSession({ injectStyle = false } = {}) {
+async function recordSession({ injectStyle = false, blobImage = false, lateBlobImage = false, deepDom = false } = {}) {
   const fixture = await context.newPage();
   await fixture.goto(fixtureServer.url, { waitUntil: "load" });
+
+  if (deepDom) {
+    // Build a deeply nested DOM chain (~60 divs) ending in a marked leaf, present
+    // at snapshot time. The verified cliff is chrome.storage.local.set: its
+    // base::Value/JSON backend hard-caps nesting at ~100 and SILENTLY NULLS
+    // deeper values; a serialized rrweb node at DOM depth d sits at JSON depth
+    // 3+2d, so any subtree past depth ~48 vanishes on save. Real Jira/Confluence
+    // DOMs exceed that. The fix carries the batch as a JSON string across every
+    // hop (recorder -> relay -> background -> storage) as defense-in-depth, even
+    // though messaging itself survived the depth in isolation testing.
+    await fixture.evaluate(() => {
+      let node = document.body;
+      for (let i = 0; i < 60; i++) {
+        const div = document.createElement("div");
+        node.appendChild(div);
+        node = div;
+      }
+      const leaf = document.createElement("span");
+      leaf.id = "deepleaf";
+      leaf.textContent = "deep-leaf-alive";
+      node.appendChild(leaf);
+    });
+  }
+
+  let blobUrl = null;
+  if (blobImage) {
+    // Faithful repro: fetch a data: PNG -> blob -> object URL -> <img>, and wait
+    // until it has actually decoded (naturalWidth > 0) so the recorder hits
+    // rrweb's synchronous inline path deterministically (no load-event race).
+    blobUrl = await fixture.evaluate(async (src) => {
+      const blob = await (await fetch(src)).blob();
+      const url = URL.createObjectURL(blob);
+      const img = document.createElement("img");
+      img.id = "blobimg";
+      img.src = url;
+      document.body.appendChild(img);
+      if (!(img.complete && img.naturalWidth > 0)) {
+        await new Promise((res) => {
+          img.onload = res;
+          img.onerror = res;
+        });
+      }
+      return url;
+    }, TINY_PNG);
+  }
+  if (lateBlobImage) {
+    // Real-world repro (Atlassian Media pattern): the <img> is present at record
+    // start with NO src — a placeholder in the full snapshot. The page only sets
+    // src = URL.createObjectURL(...) LATER, after recording begins (see below).
+    await fixture.evaluate(() => {
+      const img = document.createElement("img");
+      img.id = "lateblobimg";
+      document.body.appendChild(img); // no src yet — captured empty in the snapshot
+    });
+  }
+
   const popup = await openPopup(context, extensionId);
   const tabId = await tabIdOf(popup, fixtureServer.url);
 
@@ -51,12 +112,43 @@ async function recordSession({ injectStyle = false } = {}) {
   for (let i = 0; i < 3; i++) await fixture.locator("#inc").click();
   await fixture.locator("#fetchBtn").click();
   await expect(fixture.locator("#counter")).toHaveText("3");
+
+  if (lateBlobImage) {
+    // Flush the full snapshot BEFORE setting the src. This is what makes the
+    // repro faithful: rrweb added a load listener to the (src-less) img at
+    // snapshot time whose closure holds the snapshot's attributes object. Our
+    // recorder flushes every 500ms via structured-clone postMessage, so once the
+    // snapshot has flushed that object is dead — a late rr_dataURL write lands on
+    // the copy we already sent away and is lost. Without this wait the blob can
+    // load within the first flush window, letting rrweb's late path sneak the
+    // rr_dataURL in and masking the bug (the very race the shipped test missed).
+    await fixture.waitForTimeout(700);
+    // Now that the snapshot is flushed, set the blob: src. rrweb records this as
+    // an attribute mutation (type 3, source 0) with the value verbatim — its
+    // inlineImages path never touches it — which is what the recorder's emit-side
+    // rewriter must convert to a data: URI. Wait for decode so there are real
+    // bytes to inline.
+    blobUrl = await fixture.evaluate(async (src) => {
+      const blob = await (await fetch(src)).blob();
+      const url = URL.createObjectURL(blob);
+      const img = document.getElementById("lateblobimg");
+      img.src = url;
+      if (!(img.complete && img.naturalWidth > 0)) {
+        await new Promise((res) => {
+          img.onload = res;
+          img.onerror = res;
+        });
+      }
+      return url;
+    }, TINY_PNG);
+  }
+
   await fixture.waitForTimeout(1200); // rrweb mutation batches flush
 
   await sendAction(popup, { action: "screenshot" });
   const viewer = await stopAndOpenViewer(context, popup);
   await fixture.close();
-  return { viewer, popup };
+  return { viewer, popup, blobUrl };
 }
 
 test("captures console, network and screenshots onto one timeline", async () => {
@@ -178,6 +270,160 @@ test("exported HTML is self-contained and replays offline", async () => {
   await viewer.close();
   await popup.close();
   fixtureServer = await serveFixture(); // restore for later tests
+});
+
+test("exported report inlines blob:-sourced images so they render offline", async () => {
+  // AC1: a blob: <img> (Atlassian Media pattern) must survive into the export and
+  // render in a clean/offline tab. Asserted on the RENDERED replay image, not the
+  // raw export string: rrweb retains the original src="blob:..." attribute (adds
+  // rrweb-original-src) and the CSP meta literally contains "blob:", so a raw-string
+  // scan false-fails even with the fix.
+  //
+  // AC2 disconfirming input: remove `inlineImages: true` from src/rrweb-recorder.js
+  // and rebuild (`node build.mjs`) — the replay <img> keeps its dead blob: src,
+  // naturalWidth stays 0, image broken. CI runs `npm run build` before tests, so this
+  // e2e positive test is itself the in-CI causal lever (same rebuild-then-rerun path
+  // the unit guard pulls); the one-time manual confirmation below is belt-and-suspenders
+  // (mirrors the waveform test's comment-plus-one-run convention at
+  // e2e/extension.spec.mjs:130-133). Confirmed by hand: set inlineImages:false,
+  // node build.mjs, rerun — fails on naturalWidth > 0.
+  const { viewer, popup, blobUrl } = await recordSession({ blobImage: true });
+
+  const [download] = await Promise.all([
+    viewer.waitForEvent("download"),
+    viewer.locator("#download").click(),
+  ]);
+  const file = path.join(mkdtempSync(path.join(tmpdir(), "openjam-e2e-")), "export.html");
+  await download.saveAs(file);
+
+  await fixtureServer.close(); // fully offline — a dead blob: src cannot resolve
+  const offline = await context.newPage();
+  await offline.goto("file://" + file, { waitUntil: "domcontentloaded" });
+
+  const frame = offline.frameLocator(".replayer-wrapper iframe");
+  const img = frame.locator("#blobimg");
+  await img.waitFor();
+
+  // Core, gating assertions (decode can race the DOM attach, so poll rather than
+  // read naturalWidth off a single evaluate right after waitFor).
+  await expect
+    .poll(() => img.evaluate((el) => el.naturalWidth), { timeout: 10000 })
+    .toBeGreaterThan(0); // it renders — no "Failed to load image"
+  const info = await img.evaluate((el) => ({
+    src: el.currentSrc || el.src,
+    orig: el.getAttribute("rrweb-original-src"),
+  }));
+  expect(info.src.startsWith("data:")).toBe(true); // sourced from inlined bytes, not blob:
+
+  // Non-gating bonus signal: the Replayer swaps the captured rr_dataURL in via
+  // rrweb-original-src. Soft-checked only — if a future rrweb normalizes/omits
+  // this attribute, it shouldn't flake a test whose contract is "the image renders".
+  if (info.orig !== null) expect(info.orig).toBe(blobUrl);
+
+  await offline.close();
+  await viewer.close();
+  await popup.close();
+  fixtureServer = await serveFixture(); // restore for later serial tests
+});
+
+test("exported report inlines blob: images that appear mid-recording", async () => {
+  // The real-world repro (Atlassian Media pattern): the <img> exists at snapshot
+  // time with NO src, and the page sets src = URL.createObjectURL(...) DURING
+  // recording. rrweb records that as an attribute mutation and copies the value
+  // verbatim — its inlineImages runs only in the node serializer, so it
+  // structurally cannot cover this case (the shipped inlineImages fix only
+  // handles imgs whose blob: src is already loaded at snapshot time). The
+  // recorder's emit-side rewriter must resolve the blob: src into a data: URI
+  // inside the buffered events before they flush, so the export renders offline.
+  //
+  // Disconfirming input: remove the emit-side rewriter from src/rrweb-recorder.js
+  // and rebuild — the replay <img> keeps its dead blob: src, naturalWidth stays
+  // 0. This is the red-first test: it FAILS against HEAD (inlineImages alone) on
+  // the naturalWidth/data: assertions, and the rewriter turns it green.
+  const { viewer, popup, blobUrl } = await recordSession({ lateBlobImage: true });
+
+  const [download] = await Promise.all([
+    viewer.waitForEvent("download"),
+    viewer.locator("#download").click(),
+  ]);
+  const file = path.join(mkdtempSync(path.join(tmpdir(), "openjam-e2e-")), "export.html");
+  await download.saveAs(file);
+
+  await fixtureServer.close(); // fully offline — a dead blob: src cannot resolve
+  const offline = await context.newPage();
+  await offline.goto("file://" + file, { waitUntil: "domcontentloaded" });
+
+  // Unlike the snapshot-complete blob test, this img has NO src at snapshot — the
+  // src arrives as a mutation event, so it only lands on the replay <img> once
+  // playback reaches it. Play the replay to the end (as a user would) so the
+  // rewritten src is applied.
+  await offline.locator(".oj-controls button", { hasText: "8x" }).click();
+  await offline.locator(".oj-controls button", { hasText: "Play" }).click();
+
+  const frame = offline.frameLocator(".replayer-wrapper iframe");
+  const img = frame.locator("#lateblobimg");
+  // Wait for it to be in the DOM, not visible: a broken image (dead blob: src)
+  // is attached but 0x0, so `state:"attached"` lets the render assertion below be
+  // the one that fails when the rewriter is absent (rather than this waitFor).
+  await img.waitFor({ state: "attached" });
+
+  // Core, gating assertions: once playback applies the mutation, a rewritten
+  // (data:) src renders; a dead blob: src leaves naturalWidth at 0. Poll — both
+  // the playback reaching the event and the decode take a moment.
+  await expect
+    .poll(() => img.evaluate((el) => el.naturalWidth), { timeout: 15000 })
+    .toBeGreaterThan(0); // it renders — no "Failed to load image"
+  const info = await img.evaluate((el) => ({ src: el.currentSrc || el.src }));
+  expect(info.src.startsWith("data:")).toBe(true); // sourced from inlined bytes, not blob:
+
+  await offline.close();
+  await viewer.close();
+  await popup.close();
+  fixtureServer = await serveFixture(); // restore for later serial tests
+});
+
+test("deep DOM survives the extension messaging depth limit", async () => {
+  // The verified cliff is chrome.storage.local.set: its base::Value/JSON backend
+  // hard-caps nesting at ~100 and SILENTLY NULLS anything deeper. A serialized
+  // rrweb node at DOM depth d sits at JSON depth 3+2d, so a full-snapshot subtree
+  // past depth ~48 becomes null the moment the events are saved to storage.
+  // The nulled childNodes entry then crashes the replayer at mount (TypeError
+  // reading 'id') AND drops the deep content, so the export replays blank.
+  //
+  // Disconfirming input: revert the eventsJson string-carrying fix (post/forward
+  // raw `events` again across the relay -> background hop) and rebuild
+  // (`node build.mjs`) — the ~60-deep chain nulls out, #deepleaf never appears in
+  // the replay iframe (and the replayer throws the null-childNode TypeError). This
+  // is the red-first test: it FAILS against the pre-fix build on the leaf assertion.
+  const { viewer, popup } = await recordSession({ deepDom: true });
+
+  const [download] = await Promise.all([
+    viewer.waitForEvent("download"),
+    viewer.locator("#download").click(),
+  ]);
+  const file = path.join(mkdtempSync(path.join(tmpdir(), "openjam-e2e-")), "export.html");
+  await download.saveAs(file);
+
+  await fixtureServer.close(); // fully offline
+  const offline = await context.newPage();
+  const pageErrors = [];
+  offline.on("pageerror", (err) => pageErrors.push(String(err)));
+  await offline.goto("file://" + file, { waitUntil: "domcontentloaded" });
+
+  // (b) the deep leaf survives serialization and appears in the rebuilt replay DOM.
+  // It lives in the full snapshot, so it renders at mount (no playback needed).
+  const frame = offline.frameLocator(".replayer-wrapper iframe");
+  const leaf = frame.locator("#deepleaf");
+  await leaf.waitFor({ timeout: 15000 });
+  await expect(leaf).toHaveText("deep-leaf-alive");
+
+  // (a) the replayer mounted without the null-childNode crash.
+  expect(pageErrors.some((e) => e.includes("reading 'id'"))).toBe(false);
+
+  await offline.close();
+  await viewer.close();
+  await popup.close();
+  fixtureServer = await serveFixture(); // restore for later serial tests
 });
 
 test("exported report: OpenJam can't phone home, but the replay may load page assets", async () => {

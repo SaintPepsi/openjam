@@ -18,7 +18,23 @@ import { renderReport, mountReplay, mountAudio, REPORT_CSS, REPLAY_CSS } from ".
 import { buildManifest } from "./manifest.js";
 import { WAVEFORM_JS } from "./src/generated/player-assets.js";
 
+// A report's rrwebEvents may be a JSON string (new — stored stringified to clear
+// Chrome's Mojo ~100-depth cap) or a plain array (old reports, synthetic test
+// reports). Normalize to an array ONCE up front so the embedded #openjam-data
+// JSON always carries a plain array (standalone replay depends on it) and
+// everything downstream (mountReplay, the .length checks) is unchanged.
+function asEventArray(v) {
+  if (Array.isArray(v)) return v;
+  if (typeof v !== "string") return [];
+  try {
+    return JSON.parse(v);
+  } catch {
+    return [];
+  }
+}
+
 export function buildReportHTML(report, replayAssets) {
+  report = { ...report, rrwebEvents: asEventArray(report.rrwebEvents) };
   const meta = report.meta || {};
   // Escape "<" so the embedded JSON can never break out of the <script> tag.
   const dataJson = JSON.stringify(report).replace(/</g, "\\u003c");

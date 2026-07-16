@@ -92,7 +92,14 @@ function dispatch(msg, sender = {}) {
   });
 }
 
-const batch = (tabId, events) => dispatch({ type: "oj-rrweb-batch", events }, { tab: { id: tabId } });
+// Batches arrive from the relay as a JSON STRING (eventsJson) — stringified at
+// the recorder so deep DOM clears Chrome's Mojo ~100-depth cap; background.js
+// JSON.parses it back into the in-memory array. Mirror that contract here.
+const batch = (tabId, events) =>
+  dispatch({ type: "oj-rrweb-batch", eventsJson: JSON.stringify(events) }, { tab: { id: tabId } });
+// A finalized report stores rrwebEvents as a JSON string (storage.local is
+// Mojo-backed too); parse to inspect. The degraded quota path stays a raw array.
+const rrOf = (report) => JSON.parse(report.rrwebEvents);
 const makeEvents = (n, t0 = 1000) => Array.from({ length: n }, (_, i) => ({ type: 3, timestamp: t0 + i }));
 const storedReports = () => Object.keys(store).filter((k) => k.startsWith("report-"));
 
@@ -105,7 +112,7 @@ test("accepts batches only from the recorded tab; rejects others with {stop:true
   const res = await dispatch({ action: "stop" });
   expect(res.ok).toBe(true);
   const report = store[store.lastReportKey];
-  expect(report.rrwebEvents.length).toBe(2); // tab-2 events never entered the session
+  expect(rrOf(report).length).toBe(2); // tab-2 events never entered the session
   expect(report.audio).toBe(null); // no audioSettings configured → audio lane stays off
 });
 
@@ -126,7 +133,7 @@ test("cancelling the debug banner salvages the recording instead of losing it (#
   expect(tabMessages.some((m) => m.msg.action === "oj-rrweb-stop")).toBe(true); // orphaned recorder told to stop
   const report = store[store.lastReportKey];
   expect(report).toBeDefined();
-  expect(report.rrwebEvents.length).toBe(4); // nothing lost
+  expect(rrOf(report).length).toBe(4); // nothing lost
   expect(createdTabs.length).toBe(1); // report opened for the user
   expect(report.events.some((e) => /cancelled from the browser banner/i.test(e.title))).toBe(true);
   expect((await dispatch({ action: "getStatus" })).recording).toBe(false);
@@ -138,13 +145,13 @@ test("sessions don't leak into each other, and stale reports are pruned from sto
   await batch(1, makeEvents(7));
   await dispatch({ action: "stop" });
   const firstKey = store.lastReportKey;
-  expect(store[firstKey].rrwebEvents.length).toBe(7);
+  expect(rrOf(store[firstKey]).length).toBe(7);
 
   await dispatch({ action: "start" });
   await dispatch({ action: "stop" }); // no batches this time
   const secondKey = store.lastReportKey;
   expect(secondKey).not.toBe(firstKey);
-  expect(store[secondKey].rrwebEvents.length).toBe(0); // previous session's events not retained
+  expect(rrOf(store[secondKey]).length).toBe(0); // previous session's events not retained
   expect(storedReports()).toEqual([secondKey]); // old report removed — storage stays bounded
 });
 

@@ -25,7 +25,12 @@ function main() {
     const msg = e.data;
     if (msg.kind === "batch") {
       try {
-        chrome.runtime.sendMessage({ type: "oj-rrweb-batch", events: msg.events }, (res) => {
+        // Forward the batch as the JSON string the recorder produced. The verified
+        // cliff is chrome.storage.local.set, not this sendMessage hop — isolation
+        // testing showed the MV3 structured clone carries a deep array through
+        // sendMessage intact. Parsing here would just break the one-string-
+        // contract-everywhere defense-in-depth, so keep it a string regardless.
+        chrome.runtime.sendMessage({ type: "oj-rrweb-batch", eventsJson: msg.eventsJson }, (res) => {
           if (chrome.runtime.lastError) return;
           // {stop:true}: the session ended without the recorder being told
           // (e.g. debug banner dismissed) — stop serializing the page.

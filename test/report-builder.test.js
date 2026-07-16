@@ -85,6 +85,30 @@ test("#openjam-data block is unchanged (still parseable, full events)", () => {
   expect(JSON.parse(data).events).toHaveLength(1);
 });
 
+test("accepts rrwebEvents as both a string and an array; #openjam-data always carries an array", () => {
+  // New reports store rrwebEvents as a JSON STRING (background.js stringifies it so
+  // deep DOM clears Chrome's Mojo ~100-depth cap); old/synthetic reports carry a
+  // plain array. buildReportHTML must normalize both up front, because standalone
+  // replay parses #openjam-data and mountReplay iterates rrwebEvents as an array.
+  //
+  // Disconfirming input: drop the `asEventArray` normalization in report-builder.js
+  // — with a string input the embedded rrwebEvents stays a string and this fails on
+  // Array.isArray (and standalone replay would break).
+  const arrayReport = makeReport(3); // rrwebEvents is an array
+  const stringReport = { ...arrayReport, rrwebEvents: JSON.stringify(arrayReport.rrwebEvents) };
+
+  for (const report of [arrayReport, stringReport]) {
+    const html = buildReportHTML(report, replayAssets);
+    const data = html.match(/id="openjam-data" type="application\/json">([\s\S]*?)<\/script>/)[1];
+    const embedded = JSON.parse(data).rrwebEvents;
+    expect(Array.isArray(embedded)).toBe(true); // never a nested string
+    expect(embedded).toHaveLength(3);
+    expect(embedded[0].timestamp).toBe(1717900000000);
+    // both inputs mount a replay (length > 1 → the engine UMD is embedded once)
+    expect(html.split("UMD_MARKER").length - 1).toBe(1);
+  }
+});
+
 test("inlines exactly one audio section when report.audio is present", () => {
   const html = buildReportHTML({ meta: {}, events: [], rrwebEvents: [], audio: { dataUrl: "data:audio/webm;base64,AA", mime: "audio/webm;codecs=opus", startWall: 1, durationMs: 10 } }, null);
   expect((html.match(/id="audio-section"/g) || []).length).toBe(1);
