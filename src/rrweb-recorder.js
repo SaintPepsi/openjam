@@ -33,10 +33,15 @@ function main() {
 
   function start() {
     if (stopFn) return;
-    // Inline image bytes as data: URIs at record time. blob:/cross-origin <img>
-    // srcs are dead outside the origin tab, so a standalone export renders them
-    // broken; inlineImages draws each already-loaded image to an offscreen canvas
-    // (no re-fetch, stays local-only) and stores the pixels as rr_dataURL.
+    // Inline image bytes as data: URIs at record time. blob: srcs are dead
+    // outside the origin tab, so a standalone export renders them broken;
+    // inlineImages draws each already-loaded image to an offscreen canvas and
+    // stores the pixels as rr_dataURL (no re-fetch for blob:/same-origin, the
+    // ticket's case — stays local-only). For cross-origin <img> srcs that
+    // taint the canvas, rrweb retries once by re-requesting the same URL the
+    // page already loaded with crossOrigin="anonymous" (no new destination,
+    // not new egress), then falls back to the untouched src with a
+    // console.warn if the server still has no CORS headers.
     // Ships default PNG (lossless); unlimitedStorage lifts the storage quota.
     // Size knob if reports prove too large (reversible fast-follow):
     // dataURLOptions: { type: "image/jpeg", quality: 0.8 }.
