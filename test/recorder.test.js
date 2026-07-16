@@ -10,12 +10,14 @@ const TO_RELAY = "oj-rec-to-relay"; // recorder -> relay
 const FROM_RELAY = "oj-relay-to-rec"; // relay -> recorder
 
 let currentEmit = null;
+let capturedOpts = null;
 let recordCalls = 0;
 let stopCalls = 0;
 
 mock.module("rrweb", () => ({
   record(opts) {
     recordCalls++;
+    capturedOpts = opts;
     currentEmit = opts.emit;
     return () => {
       stopCalls++;
@@ -51,6 +53,12 @@ test("announces readiness on load so the relay can start/resume it", () => {
 test("starts on the relay's start command and drains the buffer on the flush interval", async () => {
   fromRelay("start");
   expect(recordCalls).toBe(1);
+  // AC2 causal guard: the fix is exactly this flag. Disconfirming input —
+  // set inlineImages:false (or remove it) in src/rrweb-recorder.js and this
+  // goes red under `bun test`. This is the source-level durable proof (the
+  // e2e acceptance test is the in-CI end-to-end lever since CI builds from
+  // source; the e2e negative is a one-time manual confirmation).
+  expect(capturedOpts.inlineImages).toBe(true);
   currentEmit({ type: 3, timestamp: 1 });
   currentEmit({ type: 3, timestamp: 2 });
   currentEmit({ type: 3, timestamp: 3 });
