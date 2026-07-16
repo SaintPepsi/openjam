@@ -33,7 +33,15 @@ function main() {
 
   function start() {
     if (stopFn) return;
+    // Inline image bytes as data: URIs at record time. blob:/cross-origin <img>
+    // srcs are dead outside the origin tab, so a standalone export renders them
+    // broken; inlineImages draws each already-loaded image to an offscreen canvas
+    // (no re-fetch, stays local-only) and stores the pixels as rr_dataURL.
+    // Ships default PNG (lossless); unlimitedStorage lifts the storage quota.
+    // Size knob if reports prove too large (reversible fast-follow):
+    // dataURLOptions: { type: "image/jpeg", quality: 0.8 }.
     stopFn = record({
+      inlineImages: true,
       emit(event) {
         buffer.push(event);
         if (!flushTimer) {
