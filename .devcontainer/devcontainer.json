@@ -1,0 +1,19 @@
+{
+  "name": "OpenJam Dev",
+  "image": "mcr.microsoft.com/playwright:v1.60.0-jammy",
+  "mounts": [
+    "source=openjam-node_modules,target=${containerWorkspaceFolder}/node_modules,type=volume"
+  ],
+  "remoteUser": "pwuser",
+  "initializeCommand": "node scripts/devcontainer-auth.mjs --stage",
+  "features": {
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {},
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": true,
+      "configureZshAsDefaultShell": true,
+      "installOhMyZsh": true,
+      "username": "pwuser"
+    }
+  },
+  "postCreateCommand": "sudo chown -R pwuser:pwuser node_modules && sudo npm install -g bun && npm ci && node scripts/devcontainer-auth.mjs --install"
+}
