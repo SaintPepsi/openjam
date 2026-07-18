@@ -2,6 +2,8 @@
 
 Part of the **PII redaction** epic (`00-epic.md`). Depends on the spike (`01-spike-tooling.md`).
 
+> **This is the real fix for names — the fast-follow to v1 auto-redaction (`DECISIONS.md` D9/D10).** The epic was triggered by names leaking, and names/free-text can't be caught reliably by regex (`01-spike-recommendation.md` §8). Capture-time auto-redaction (`02`) reduces structured PII but does *not* catch names; this human-in-the-loop scrub does. Sequence it immediately after `02`, not as a late-epic item.
+
 Sometimes PII slips through the capture-time defaults (a name in body text, an ID in a payload). The reviewer should be able to scrub it after the fact, before sharing.
 
 ## Behaviour

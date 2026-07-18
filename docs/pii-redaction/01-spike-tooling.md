@@ -15,6 +15,7 @@ Time-boxed investigation to de-risk the rest of the epic before we build. Output
 - Decide **where redaction sits in the capture pipeline** per source (CDP network events vs rrweb DOM vs screenshots).
 - Recommend the **default assumption set** for capture-time redaction (which patterns/headers are on by default).
 - Build a **test dataset and harness** that measures redaction effectiveness, so tooling choices are backed by numbers, not vibes.
+- Produce a **redaction-verification skill** so a *blind* agent, handed a recording, knows what PII to hunt for, which fields carry it, and what must *not* be touched — turning "is it redacted?" into a repeatable, evidence-based check rather than a judgement call.
 
 ## Test data + success rate
 
@@ -38,6 +39,7 @@ Each item is an artifact someone else can re-run or read — not "we looked into
 - [ ] **Disconfirming check:** feed the harness a no-op "redactor" that masks nothing → it must report recall ≈ 0%, not 100%. A scorer that always says 100% is worthless. Evidence: pasted run.
 - [ ] Harness wired into **CI** so recall can't silently regress → add a step to `.github/workflows/ci.yml` (the existing `npm test` does **not** cover `eval/`, so the harness needs its own step or to be folded into the test script) that runs the scorer and **fails the job if recall drops below an agreed threshold**. Evidence: the workflow `file:line` of the new step + a CI run where deliberately dropping a pattern turns the job red.
 - [ ] Recommendation is concrete enough that 02/03 build against it → each open question in 02 and 03 has an answer citable in this doc. Evidence: reviewer maps each open question to a section.
+- [ ] **Redaction-verification skill** committed — a procedure a *blind* agent (fresh context, not the author of the redactor) runs against a recording or exported report to judge redaction. It encodes (a) the PII types/patterns to hunt for (the default pattern set), (b) **every** source and field that can carry PII — `report.events[]` (network bodies/headers/url, console, errors), rrweb input/DOM text, **and** the sibling fields `report.device.{url,referrer,title}` + `report.meta.{pageUrl,pageTitle}` (not just `events`), and (c) the diagnostic fields that must stay intact (`userAgent`, `platform`, `viewport`, `screen`, `timezone`, …) so it also catches **over-redaction**. Output is a per-finding report citing each leaked value and where it was found. Evidence: run it on a known-leaky report → it flags the leak with location; run on a clean export → it passes. **Disconfirming check:** hand it a report that still contains PII it should catch → it must fail, not rubber-stamp.
 
 Report anything left unresolved. "Tooling X failed the bundle-size budget, deferred — here's the number" is a valid spike outcome, not a failure.
 
