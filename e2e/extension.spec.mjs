@@ -16,6 +16,7 @@ import {
   sendAction,
   stopAndOpenViewer,
 } from "../test/e2e/harness.mjs";
+import { buildReportHTML } from "../report-builder.js";
 
 test.describe.configure({ mode: "serial" }); // one browser, recordings are global state
 
@@ -31,11 +32,72 @@ test.afterAll(async () => {
   await fixtureServer?.close();
 });
 
+// A 1x1 PNG as a data: URI — the blob's byte source is irrelevant to the bug;
+// only that the <img> is sourced from a blob: object URL (like Atlassian Media).
+const TINY_PNG =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
 // Records the fixture with console + network + screenshot activity and
 // resolves with the viewer page. Used by the first three tests.
-async function recordSession({ injectStyle = false } = {}) {
+async function recordSession({ injectStyle = false, blobImage = false, lateBlobImage = false, deepDom = false } = {}) {
   const fixture = await context.newPage();
   await fixture.goto(fixtureServer.url, { waitUntil: "load" });
+
+  if (deepDom) {
+    // Build a deeply nested DOM chain (~60 divs) ending in a marked leaf, present
+    // at snapshot time. The verified cliff is chrome.storage.local.set: its
+    // base::Value/JSON backend hard-caps nesting at ~100 and SILENTLY NULLS
+    // deeper values; a serialized rrweb node at DOM depth d sits at JSON depth
+    // 3+2d, so any subtree past depth ~48 vanishes on save. Real Jira/Confluence
+    // DOMs exceed that. The fix carries the batch as a JSON string across every
+    // hop (recorder -> relay -> background -> storage) as defense-in-depth, even
+    // though messaging itself survived the depth in isolation testing.
+    await fixture.evaluate(() => {
+      let node = document.body;
+      for (let i = 0; i < 60; i++) {
+        const div = document.createElement("div");
+        node.appendChild(div);
+        node = div;
+      }
+      const leaf = document.createElement("span");
+      leaf.id = "deepleaf";
+      leaf.textContent = "deep-leaf-alive";
+      node.appendChild(leaf);
+    });
+  }
+
+  let blobUrl = null;
+  if (blobImage) {
+    // Faithful repro: fetch a data: PNG -> blob -> object URL -> <img>, and wait
+    // until it has actually decoded (naturalWidth > 0) so the recorder hits
+    // rrweb's synchronous inline path deterministically (no load-event race).
+    blobUrl = await fixture.evaluate(async (src) => {
+      const blob = await (await fetch(src)).blob();
+      const url = URL.createObjectURL(blob);
+      const img = document.createElement("img");
+      img.id = "blobimg";
+      img.src = url;
+      document.body.appendChild(img);
+      if (!(img.complete && img.naturalWidth > 0)) {
+        await new Promise((res) => {
+          img.onload = res;
+          img.onerror = res;
+        });
+      }
+      return url;
+    }, TINY_PNG);
+  }
+  if (lateBlobImage) {
+    // Real-world repro (Atlassian Media pattern): the <img> is present at record
+    // start with NO src — a placeholder in the full snapshot. The page only sets
+    // src = URL.createObjectURL(...) LATER, after recording begins (see below).
+    await fixture.evaluate(() => {
+      const img = document.createElement("img");
+      img.id = "lateblobimg";
+      document.body.appendChild(img); // no src yet — captured empty in the snapshot
+    });
+  }
+
   const popup = await openPopup(context, extensionId);
   const tabId = await tabIdOf(popup, fixtureServer.url);
 
@@ -50,12 +112,43 @@ async function recordSession({ injectStyle = false } = {}) {
   for (let i = 0; i < 3; i++) await fixture.locator("#inc").click();
   await fixture.locator("#fetchBtn").click();
   await expect(fixture.locator("#counter")).toHaveText("3");
+
+  if (lateBlobImage) {
+    // Flush the full snapshot BEFORE setting the src. This is what makes the
+    // repro faithful: rrweb added a load listener to the (src-less) img at
+    // snapshot time whose closure holds the snapshot's attributes object. Our
+    // recorder flushes every 500ms via structured-clone postMessage, so once the
+    // snapshot has flushed that object is dead — a late rr_dataURL write lands on
+    // the copy we already sent away and is lost. Without this wait the blob can
+    // load within the first flush window, letting rrweb's late path sneak the
+    // rr_dataURL in and masking the bug (the very race the shipped test missed).
+    await fixture.waitForTimeout(700);
+    // Now that the snapshot is flushed, set the blob: src. rrweb records this as
+    // an attribute mutation (type 3, source 0) with the value verbatim — its
+    // inlineImages path never touches it — which is what the recorder's emit-side
+    // rewriter must convert to a data: URI. Wait for decode so there are real
+    // bytes to inline.
+    blobUrl = await fixture.evaluate(async (src) => {
+      const blob = await (await fetch(src)).blob();
+      const url = URL.createObjectURL(blob);
+      const img = document.getElementById("lateblobimg");
+      img.src = url;
+      if (!(img.complete && img.naturalWidth > 0)) {
+        await new Promise((res) => {
+          img.onload = res;
+          img.onerror = res;
+        });
+      }
+      return url;
+    }, TINY_PNG);
+  }
+
   await fixture.waitForTimeout(1200); // rrweb mutation batches flush
 
   await sendAction(popup, { action: "screenshot" });
   const viewer = await stopAndOpenViewer(context, popup);
   await fixture.close();
-  return { viewer, popup };
+  return { viewer, popup, blobUrl };
 }
 
 test("captures console, network and screenshots onto one timeline", async () => {
@@ -116,6 +209,41 @@ test("replay preserves runtime CSS-in-JS styling (insertRule from the page)", as
   await popup.close();
 });
 
+test("in-extension viewer upgrades <oj-waveform> for an audio+replay report", async () => {
+  // Regression guard (Task 9): the in-extension viewer must register the
+  // <oj-waveform> custom element. mountReplay only does
+  // document.createElement("oj-waveform") — nothing in the viewer's module graph
+  // defines it, so viewer.html carries `<script src="waveform.js">` (which
+  // self-registers the element) before viewer.js. Without it the element never
+  // upgrades: it stays an inert 44px strip with no <canvas>, and the narration
+  // waveform silently disappears in the installed extension (background.js opens
+  // viewer.html to show every report).
+  //
+  // Disconfirming input: delete `<script src="waveform.js"></script>` from
+  // viewer.html and the canvas assertion below fails (the element never upgrades,
+  // so `oj-waveform canvas` count is 0). Confirmed by running this test with the
+  // tag removed.
+  const seed = await openPopup(context, extensionId);
+  await seed.evaluate(() => chrome.storage.local.set({ audioSettings: { enabled: true, deviceId: null } }));
+  await seed.close();
+
+  // A full recording with the fake mic on → report carries BOTH rrwebEvents
+  // (replay) and audio, the exact shape that makes mountReplay build a waveform.
+  const { viewer, popup } = await recordSession();
+  await viewer.locator("#replay .replayer-wrapper").waitFor();
+
+  // Outcome the user sees: the waveform strip's custom element is upgraded and
+  // has painted its own <canvas>. An unregistered element would have no canvas.
+  await expect(viewer.locator("#replay .oj-waveform oj-waveform canvas")).toHaveCount(1);
+
+  await viewer.close();
+  await popup.close();
+  // Reset the global audio toggle so later serial tests record without audio.
+  const reset = await openPopup(context, extensionId);
+  await reset.evaluate(() => chrome.storage.local.remove("audioSettings"));
+  await reset.close();
+});
+
 test("exported HTML is self-contained and replays offline", async () => {
   const { viewer, popup } = await recordSession();
 
@@ -144,6 +272,216 @@ test("exported HTML is self-contained and replays offline", async () => {
   fixtureServer = await serveFixture(); // restore for later tests
 });
 
+test("exported report inlines blob:-sourced images so they render offline", async () => {
+  // AC1: a blob: <img> (Atlassian Media pattern) must survive into the export and
+  // render in a clean/offline tab. Asserted on the RENDERED replay image, not the
+  // raw export string: rrweb retains the original src="blob:..." attribute (adds
+  // rrweb-original-src) and the CSP meta literally contains "blob:", so a raw-string
+  // scan false-fails even with the fix.
+  //
+  // AC2 disconfirming input: remove `inlineImages: true` from src/rrweb-recorder.js
+  // and rebuild (`node build.mjs`) — the replay <img> keeps its dead blob: src,
+  // naturalWidth stays 0, image broken. CI runs `npm run build` before tests, so this
+  // e2e positive test is itself the in-CI causal lever (same rebuild-then-rerun path
+  // the unit guard pulls); the one-time manual confirmation below is belt-and-suspenders
+  // (mirrors the waveform test's comment-plus-one-run convention at
+  // e2e/extension.spec.mjs:130-133). Confirmed by hand: set inlineImages:false,
+  // node build.mjs, rerun — fails on naturalWidth > 0.
+  const { viewer, popup, blobUrl } = await recordSession({ blobImage: true });
+
+  const [download] = await Promise.all([
+    viewer.waitForEvent("download"),
+    viewer.locator("#download").click(),
+  ]);
+  const file = path.join(mkdtempSync(path.join(tmpdir(), "openjam-e2e-")), "export.html");
+  await download.saveAs(file);
+
+  await fixtureServer.close(); // fully offline — a dead blob: src cannot resolve
+  const offline = await context.newPage();
+  await offline.goto("file://" + file, { waitUntil: "domcontentloaded" });
+
+  const frame = offline.frameLocator(".replayer-wrapper iframe");
+  const img = frame.locator("#blobimg");
+  await img.waitFor();
+
+  // Core, gating assertions (decode can race the DOM attach, so poll rather than
+  // read naturalWidth off a single evaluate right after waitFor).
+  await expect
+    .poll(() => img.evaluate((el) => el.naturalWidth), { timeout: 10000 })
+    .toBeGreaterThan(0); // it renders — no "Failed to load image"
+  const info = await img.evaluate((el) => ({
+    src: el.currentSrc || el.src,
+    orig: el.getAttribute("rrweb-original-src"),
+  }));
+  expect(info.src.startsWith("data:")).toBe(true); // sourced from inlined bytes, not blob:
+
+  // Non-gating bonus signal: the Replayer swaps the captured rr_dataURL in via
+  // rrweb-original-src. Soft-checked only — if a future rrweb normalizes/omits
+  // this attribute, it shouldn't flake a test whose contract is "the image renders".
+  if (info.orig !== null) expect(info.orig).toBe(blobUrl);
+
+  await offline.close();
+  await viewer.close();
+  await popup.close();
+  fixtureServer = await serveFixture(); // restore for later serial tests
+});
+
+test("exported report inlines blob: images that appear mid-recording", async () => {
+  // The real-world repro (Atlassian Media pattern): the <img> exists at snapshot
+  // time with NO src, and the page sets src = URL.createObjectURL(...) DURING
+  // recording. rrweb records that as an attribute mutation and copies the value
+  // verbatim — its inlineImages runs only in the node serializer, so it
+  // structurally cannot cover this case (the shipped inlineImages fix only
+  // handles imgs whose blob: src is already loaded at snapshot time). The
+  // recorder's emit-side rewriter must resolve the blob: src into a data: URI
+  // inside the buffered events before they flush, so the export renders offline.
+  //
+  // Disconfirming input: remove the emit-side rewriter from src/rrweb-recorder.js
+  // and rebuild — the replay <img> keeps its dead blob: src, naturalWidth stays
+  // 0. This is the red-first test: it FAILS against HEAD (inlineImages alone) on
+  // the naturalWidth/data: assertions, and the rewriter turns it green.
+  const { viewer, popup, blobUrl } = await recordSession({ lateBlobImage: true });
+
+  const [download] = await Promise.all([
+    viewer.waitForEvent("download"),
+    viewer.locator("#download").click(),
+  ]);
+  const file = path.join(mkdtempSync(path.join(tmpdir(), "openjam-e2e-")), "export.html");
+  await download.saveAs(file);
+
+  await fixtureServer.close(); // fully offline — a dead blob: src cannot resolve
+  const offline = await context.newPage();
+  await offline.goto("file://" + file, { waitUntil: "domcontentloaded" });
+
+  // Unlike the snapshot-complete blob test, this img has NO src at snapshot — the
+  // src arrives as a mutation event, so it only lands on the replay <img> once
+  // playback reaches it. Play the replay to the end (as a user would) so the
+  // rewritten src is applied.
+  await offline.locator(".oj-controls button", { hasText: "8x" }).click();
+  await offline.locator(".oj-controls button", { hasText: "Play" }).click();
+
+  const frame = offline.frameLocator(".replayer-wrapper iframe");
+  const img = frame.locator("#lateblobimg");
+  // Wait for it to be in the DOM, not visible: a broken image (dead blob: src)
+  // is attached but 0x0, so `state:"attached"` lets the render assertion below be
+  // the one that fails when the rewriter is absent (rather than this waitFor).
+  await img.waitFor({ state: "attached" });
+
+  // Core, gating assertions: once playback applies the mutation, a rewritten
+  // (data:) src renders; a dead blob: src leaves naturalWidth at 0. Poll — both
+  // the playback reaching the event and the decode take a moment.
+  await expect
+    .poll(() => img.evaluate((el) => el.naturalWidth), { timeout: 15000 })
+    .toBeGreaterThan(0); // it renders — no "Failed to load image"
+  const info = await img.evaluate((el) => ({ src: el.currentSrc || el.src }));
+  expect(info.src.startsWith("data:")).toBe(true); // sourced from inlined bytes, not blob:
+
+  await offline.close();
+  await viewer.close();
+  await popup.close();
+  fixtureServer = await serveFixture(); // restore for later serial tests
+});
+
+test("deep DOM survives the extension messaging depth limit", async () => {
+  // The verified cliff is chrome.storage.local.set: its base::Value/JSON backend
+  // hard-caps nesting at ~100 and SILENTLY NULLS anything deeper. A serialized
+  // rrweb node at DOM depth d sits at JSON depth 3+2d, so a full-snapshot subtree
+  // past depth ~48 becomes null the moment the events are saved to storage.
+  // The nulled childNodes entry then crashes the replayer at mount (TypeError
+  // reading 'id') AND drops the deep content, so the export replays blank.
+  //
+  // Disconfirming input: revert the eventsJson string-carrying fix (post/forward
+  // raw `events` again across the relay -> background hop) and rebuild
+  // (`node build.mjs`) — the ~60-deep chain nulls out, #deepleaf never appears in
+  // the replay iframe (and the replayer throws the null-childNode TypeError). This
+  // is the red-first test: it FAILS against the pre-fix build on the leaf assertion.
+  const { viewer, popup } = await recordSession({ deepDom: true });
+
+  const [download] = await Promise.all([
+    viewer.waitForEvent("download"),
+    viewer.locator("#download").click(),
+  ]);
+  const file = path.join(mkdtempSync(path.join(tmpdir(), "openjam-e2e-")), "export.html");
+  await download.saveAs(file);
+
+  await fixtureServer.close(); // fully offline
+  const offline = await context.newPage();
+  const pageErrors = [];
+  offline.on("pageerror", (err) => pageErrors.push(String(err)));
+  await offline.goto("file://" + file, { waitUntil: "domcontentloaded" });
+
+  // (b) the deep leaf survives serialization and appears in the rebuilt replay DOM.
+  // It lives in the full snapshot, so it renders at mount (no playback needed).
+  const frame = offline.frameLocator(".replayer-wrapper iframe");
+  const leaf = frame.locator("#deepleaf");
+  await leaf.waitFor({ timeout: 15000 });
+  await expect(leaf).toHaveText("deep-leaf-alive");
+
+  // (a) the replayer mounted without the null-childNode crash.
+  expect(pageErrors.some((e) => e.includes("reading 'id'"))).toBe(false);
+
+  await offline.close();
+  await viewer.close();
+  await popup.close();
+  fixtureServer = await serveFixture(); // restore for later serial tests
+});
+
+test("exported report: OpenJam can't phone home, but the replay may load page assets", async () => {
+  // PRIVACY line: OpenJam itself makes no outbound connections (connect-src 'none'
+  // blocks fetch/XHR/beacon; no external scripts), but the session replay is a
+  // faithful reproduction of the page, so it IS allowed to load that page's own
+  // passive assets (images/fonts/styles). Assert both halves via CSP violations.
+  const report = { meta: { pageTitle: "x", pageUrl: "x", capturedAt: 1, durationMs: 1, eventCount: 0 }, device: {}, events: [], rrwebEvents: [], audio: null };
+  const html = buildReportHTML(report, null);
+  const PROBE_URL = "https://example.com/__oj_egress_probe__";
+
+  // Returns the violated CSP directive for the probe URL, or null if not blocked.
+  const probeImg = (page) =>
+    page.evaluate(
+      (url) =>
+        new Promise((resolve) => {
+          let v = null;
+          document.addEventListener("securitypolicyviolation", (e) => {
+            if (e.blockedURI && e.blockedURI.indexOf("__oj_egress_probe__") !== -1) v = e.violatedDirective;
+          });
+          const img = document.createElement("img");
+          const done = () => resolve(v);
+          img.onload = done;
+          img.onerror = () => setTimeout(done, 50);
+          setTimeout(done, 1200);
+          img.src = url + ".png";
+          document.body.appendChild(img);
+        }),
+      PROBE_URL,
+    );
+  const probeFetch = (page) =>
+    page.evaluate(
+      (url) =>
+        new Promise((resolve) => {
+          let v = null;
+          document.addEventListener("securitypolicyviolation", (e) => {
+            if (e.blockedURI && e.blockedURI.indexOf("__oj_egress_probe__") !== -1) v = e.violatedDirective;
+          });
+          fetch(url).catch(() => {}).finally(() => setTimeout(() => resolve(v), 50));
+          setTimeout(() => resolve(v), 1200);
+        }),
+      PROBE_URL,
+    );
+
+  const page = await context.newPage();
+  await page.setContent(html, { waitUntil: "domcontentloaded" });
+  expect(await probeImg(page)).toBeNull(); // replay assets: allowed (fidelity)
+  expect(await probeFetch(page)).toMatch(/connect-src/); // OpenJam egress: blocked
+  await page.close();
+
+  // Disconfirming: with no CSP, fetch raises no violation — proves the assertion
+  // measures the CSP, not a fetch that always resolves null.
+  const bare = await context.newPage();
+  await bare.setContent(`<!doctype html><meta charset="utf-8"><body>`, { waitUntil: "domcontentloaded" });
+  expect(await probeFetch(bare)).toBeNull();
+  await bare.close();
+});
+
 test("restricted pages fail with a reportable error", async () => {
   // Without the `tabs` permission, tabs.query can't url-match chrome:// pages
   // (host permissions don't cover that scheme) — so exercise the background's
@@ -160,25 +498,29 @@ test("restricted pages fail with a reportable error", async () => {
   // advice rather than a raw CDP error like "Cannot access a chrome:// URL".
   expect(res.error).toContain("only record normal web pages");
 
-  // The popup's failure branch (popup.js toggle handler) renders the error
-  // with a GitHub issue link and the PII warning.
-  await popup.evaluate(async (error) => {
-    const { renderErrorReport } = await import("./issue-link.js");
-    renderErrorReport(document.getElementById("hint"), error, {
-      version: chrome.runtime.getManifest().version,
-      userAgent: navigator.userAgent,
-    });
-  }, res.error);
-  await expect(popup.locator("#hint a")).toHaveAttribute(
+  // The popup's failure branch (popup.js showFailure) splits renderErrorReport's
+  // output across the component's TWO notice slots: the error + GitHub link go to
+  // showError (red box), the PII warning to showWarning (gold box). Drive that
+  // REAL path rather than re-implementing it: dispatch a click on the component's
+  // record toggle. popup.js's oj-toggle handler resolves the active tab (still the
+  // restricted page, kept in front) and starts; the guard fails it and the
+  // PRODUCTION showFailure splits the error across the two slots. dispatchEvent
+  // (not .click()) avoids focusing the popup tab, so activeTabId stays restricted.
+  await restricted.bringToFront();
+  await popup.locator("openjam-popup [data-act=toggle]").dispatchEvent("click");
+  await expect(popup.locator("openjam-popup .err a")).toHaveAttribute(
     "href",
     /github\.com\/SaintPepsi\/openjam\/issues\/new/,
   );
-  await expect(popup.locator(".pii-warning")).toContainText("remove any PII");
+  // The PII warning is its OWN gold notice, not fused into the red error box.
+  await expect(popup.locator("openjam-popup .warn")).toContainText("remove any PII");
+  await expect(popup.locator("openjam-popup .err .pii-warning")).toHaveCount(0);
   // The failure renders as a red error callout, not gray hint text. Visual
-  // baseline of the whole hint region (error box + report link + PII warning);
-  // its text is static, so the snapshot is deterministic across runs.
-  await expect(popup.locator(".oj-error")).toBeVisible();
-  await expect(popup.locator("#hint")).toHaveScreenshot("popup-error-callout.png");
+  // baseline of both notices (red error + link, then separate gold PII box);
+  // the text is static, so the snapshot is deterministic across runs.
+  await expect(popup.locator("openjam-popup .err")).toBeVisible();
+  await expect(popup.locator("openjam-popup .warn")).toBeVisible();
+  await expect(popup.locator("openjam-popup .card")).toHaveScreenshot("popup-error-callout.png");
   await restricted.close();
   await popup.close();
 });
@@ -195,5 +537,117 @@ test("storage keeps only the newest report", async () => {
     return Object.keys(all).filter((k) => k.startsWith("report-"));
   });
   expect(reportKeys).toHaveLength(1);
+  await popup.close();
+});
+
+test("double-click on the record toggle starts exactly one recording, no error", async () => {
+  // The re-entrancy guard (openjam-popup _onToggle) must absorb a second click
+  // that lands during the async start round-trip. Without it, the second click
+  // fires a second start against the same tab and the user gets a red error
+  // over a recording that started fine (docs/popup-redesign-fixes/01).
+
+  // A recordable page must be the active tab so the toggle's start() resolves a
+  // real tabId (popup.js activeTabId → chrome.tabs.query active), not the
+  // extension page. bringToFront makes the fixture active; clicking the toggle
+  // via the element (not Playwright's mouse) keeps it that way.
+  const fixture = await context.newPage();
+  await fixture.goto(fixtureServer.url, { waitUntil: "load" });
+  const popup = await openPopup(context, extensionId);
+  await fixture.bringToFront();
+
+  // Two clicks dispatched synchronously with no await between — the exact
+  // interleaving the guard exists to handle.
+  await popup.evaluate(() => {
+    const btn = document
+      .querySelector("openjam-popup")
+      .shadowRoot.querySelector("[data-act=toggle]");
+    btn.click();
+    btn.click();
+  });
+
+  // Exactly one recording is live...
+  await expect
+    .poll(() => sendAction(popup, { action: "getStatus" }).then((s) => s.recording))
+    .toBe(true);
+  // ...and the second click produced no error notice.
+  await expect(popup.locator("openjam-popup .err")).toBeHidden();
+
+  await sendAction(popup, { action: "stop" }); // finalize so state doesn't leak
+  await fixture.close();
+  await popup.close();
+});
+
+test("demo stop button flips recording off and resets the label", async () => {
+  // Ticket 06: on the landing page the hero <openjam-popup demo> auto-starts
+  // recording (connectedCallback → _startDemo). Clicking its primary button
+  // must stop it. Before the fix, _demoToggle never cleared `recording`, so
+  // the label stayed "Stop & open report" and the REC timer kept counting.
+  const landing = await context.newPage();
+  await landing.goto(new URL("../docs/index.html", import.meta.url).href, { waitUntil: "load" });
+
+  const popup = landing.locator("openjam-popup[demo]");
+  const label = popup.locator(".row.primary .t");
+
+  // Demo auto-starts recording on connect.
+  await expect(label).toHaveText("Stop & open report");
+  expect(await popup.evaluate((el) => el.hasAttribute("recording"))).toBe(true);
+
+  // Click the real toggle via the element (the hero card's 3D tilt transform
+  // trips Playwright's mouse actionability checks).
+  await landing.evaluate(() => {
+    document
+      .querySelector("openjam-popup[demo]")
+      .shadowRoot.querySelector("[data-act=toggle]")
+      .click();
+  });
+
+  // Outcome the user sees: label resets AND recording is cleared.
+  await expect(label).toHaveText("Start recording");
+  expect(await popup.evaluate((el) => el.hasAttribute("recording"))).toBe(false);
+
+  await landing.close();
+});
+
+test("_render derives the whole display from component state (ui = fn(state))", async () => {
+  // 05b: one _render() is the single place that writes display DOM — handlers
+  // mutate state and call it, so the rendered UI can't drift from state. Drive
+  // the real _render with state and assert the DOM follows: label from
+  // `recording`, timer from `_elapsed` (demo meta), error notice hidden when the
+  // error state is empty and shown when it is set.
+  const popup = await openPopup(context, extensionId);
+
+  // label derives from `recording`
+  const label = await popup.evaluate(() => {
+    const el = document.querySelector("openjam-popup");
+    const t = () => el.shadowRoot.querySelector(".row.primary .t").textContent;
+    el.recording = false; el._render();
+    const off = t();
+    el.recording = true; el._render();
+    return { off, on: t() };
+  });
+  expect(label).toEqual({ off: "Start recording", on: "Stop & open report" });
+
+  // timer text derives from `_elapsed` (demo meta shows a running clock)
+  const timer = await popup.evaluate(() => {
+    const el = document.querySelector("openjam-popup");
+    el.setAttribute("demo", "");
+    el.recording = true; el._elapsed = 65000; el._render();
+    return el.shadowRoot.querySelector(".st-meta").textContent;
+  });
+  expect(timer).toBe("01:05");
+
+  // error notice visibility derives from the error state
+  const notice = await popup.evaluate(() => {
+    const el = document.querySelector("openjam-popup");
+    const err = () => el.shadowRoot.querySelector(".err");
+    el._error = ""; el._render();
+    const whenEmpty = err().hidden;
+    el._error = "boom"; el._render();
+    return { whenEmpty, whenSet: err().hidden, text: err().textContent };
+  });
+  expect(notice.whenEmpty).toBe(true);
+  expect(notice.whenSet).toBe(false);
+  expect(notice.text).toContain("boom");
+
   await popup.close();
 });

@@ -20,6 +20,7 @@ const session = {
   requestEvents: new Map(), // requestId -> network event reference
   device: null,
   lastErrorShot: 0,
+  audioActive: false,
 };
 
 function nextId() {
@@ -295,10 +296,58 @@ async function startReplayRecorder(tabId) {
   }
 }
 
+// ---- mic narration lane (offscreen MediaRecorder) -------------------------
+
+async function startAudioRecorder() {
+  const { audioSettings } = await chrome.storage.local.get("audioSettings");
+  if (!audioSettings || !audioSettings.enabled) return;
+  try {
+    if (!(await chrome.offscreen.hasDocument())) {
+      await chrome.offscreen.createDocument({
+        url: "offscreen.html",
+        reasons: ["USER_MEDIA"],
+        justification: "Record microphone narration for a local bug report.",
+      });
+    }
+    const res = await chrome.runtime.sendMessage({ type: "oj-audio-start", deviceId: audioSettings.deviceId || null });
+    if (!res || !res.ok) throw new Error((res && res.error) || "audio start failed");
+    session.audioActive = true;
+  } catch (err) {
+    session.audioActive = false;
+    try { await chrome.offscreen.closeDocument(); } catch { /* none open */ }
+    pushEvent({ t: Date.now(), kind: KIND.LOG, level: "warning", title: "Audio narration unavailable", detail: { message: String(err) } });
+  }
+}
+
+async function stopAudioRecorder() {
+  if (!session.audioActive) return null;
+  session.audioActive = false;
+  try {
+    const res = await chrome.runtime.sendMessage({ type: "oj-audio-stop" });
+    return res && res.dataUrl ? res : null;
+  } catch {
+    return null;
+  } finally {
+    try { await chrome.offscreen.closeDocument(); } catch { /* already closed */ }
+  }
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "oj-rrweb-batch") {
     const accept = session.recording && sender.tab && sender.tab.id === session.tabId;
-    if (accept) session.rrwebEvents.push(...msg.events);
+    // The batch arrives as a JSON string (recorder stringifies it; see
+    // src/rrweb-recorder.js — the verified cliff is chrome.storage.local.set's
+    // serialization silently nulling JSON nesting deeper than ~100, DOM depth
+    // >= 48, so events travel and persist as a string end to end). Parse it back
+    // into the in-memory array here, which never touches storage directly. Guard
+    // against malformed JSON so one bad batch can't tear down the listener.
+    if (accept) {
+      try {
+        session.rrwebEvents.push(...JSON.parse(msg.eventsJson));
+      } catch (err) {
+        console.warn("OpenJam: dropped an unparseable rrweb batch", err);
+      }
+    }
     // {stop:true} tells an orphaned recorder (session ended without it being
     // told, e.g. debug banner dismissed) to stop serializing the page.
     sendResponse(accept ? { ok: true } : { stop: true });
@@ -346,6 +395,7 @@ async function startRecording(tabId) {
     requestEvents: new Map(),
     device: null,
     lastErrorShot: 0,
+    audioActive: false,
   });
 
   try {
@@ -363,6 +413,7 @@ async function startRecording(tabId) {
   await captureDeviceInfo();
   await captureScreenshot("Recording started");
   await startReplayRecorder(tabId);
+  await startAudioRecorder();
   return { ok: true };
 }
 
@@ -389,7 +440,8 @@ async function stopRecording() {
     // already detached — fine.
   }
 
-  return finalizeRecording();
+  const audio = await stopAudioRecorder();
+  return finalizeRecording({ audio });
 }
 
 // The debugger can detach without us asking: the user clicks "Cancel" on
@@ -410,13 +462,14 @@ async function salvageRecording(note) {
   // still accepted, then close the session and persist what we have.
   await new Promise((resolve) => setTimeout(resolve, 400));
   session.recording = false;
-  await finalizeRecording({ note });
+  const audio = await stopAudioRecorder();
+  await finalizeRecording({ note, audio });
 }
 
 // Build the report from the current session and open the viewer. Shared by the
 // clean stop path and the salvage path, so an interrupted capture follows the
 // exact same persistence (incl. the storage-quota degradation in saveReport).
-async function finalizeRecording({ note } = {}) {
+async function finalizeRecording({ note, audio } = {}) {
   if (note) {
     pushEvent({ t: Date.now(), kind: KIND.LOG, level: "warning", title: note, detail: { message: note } });
   }
@@ -432,7 +485,13 @@ async function finalizeRecording({ note } = {}) {
     },
     device: session.device,
     events: session.events.slice().sort((a, b) => a.t - b.t),
-    rrwebEvents: session.rrwebEvents.slice().sort((a, b) => a.timestamp - b.timestamp),
+    // Store rrweb events as a JSON STRING: this is the verified cliff —
+    // chrome.storage.local.set's serialization silently nulls JSON nesting
+    // deeper than ~100 (DOM depth >= 48), so a plain array would lose deep
+    // subtrees on save. The consumers (viewer.js, report-builder.js) normalize
+    // string->array up front.
+    rrwebEvents: JSON.stringify(session.rrwebEvents.slice().sort((a, b) => a.timestamp - b.timestamp)),
+    audio: audio || null,
   };
 
   const key = "report-" + session.startWall;
@@ -463,6 +522,7 @@ async function saveReport(key, report) {
     return;
   } catch (err) {
     report.rrwebEvents = [];
+    report.audio = null;
     report.events.push({
       id: nextId(),
       t: Date.now(),

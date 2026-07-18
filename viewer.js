@@ -4,13 +4,27 @@
 // dist/rrweb-player.js (copied there by build.mjs). Exports the self-contained
 // file on demand using the same renderer + mount the export embeds.
 
-import { renderReport, mountReplay, REPORT_CSS, REPLAY_CSS } from "./renderer.js";
+import { renderReport, mountReplay, mountAudio, REPORT_CSS, REPLAY_CSS } from "./renderer.js";
 import { buildReportHTML } from "./report-builder.js";
 import { renderErrorReport } from "./issue-link.js";
 
 const ENV = { version: chrome.runtime.getManifest().version, userAgent: navigator.userAgent };
 const params = new URLSearchParams(location.search);
 const key = params.get("key");
+
+// A stored report's rrwebEvents may be a JSON string (new — background.js stores
+// it stringified so deep DOM survives chrome.storage.local's Mojo ~100-depth cap)
+// or a plain array (old reports, or the degraded no-replay path). Normalize to an
+// array once here so renderer.js and report-builder.js are unchanged downstream.
+function asEventArray(v) {
+  if (Array.isArray(v)) return v;
+  if (typeof v !== "string") return [];
+  try {
+    return JSON.parse(v);
+  } catch {
+    return [];
+  }
+}
 
 function fail(message) {
   const app = document.getElementById("app");
@@ -28,19 +42,33 @@ async function load() {
   const stored = await chrome.storage.local.get(key);
   const report = stored[key];
   if (!report) return fail("Report not found (it may have been cleared).");
+  report.rrwebEvents = asEventArray(report.rrwebEvents);
 
   renderReport(document.getElementById("app"), report);
 
   // dist/rrweb-replay.js defines the RRWebReplayer global; absent if unbuilt.
   const ReplayerCtor = globalThis.RRWebReplayer;
-  if (ReplayerCtor && report.rrwebEvents && report.rrwebEvents.length > 1) {
+  const hasReplay = !!(ReplayerCtor && report.rrwebEvents && report.rrwebEvents.length > 1);
+  if (hasReplay) {
     const section = document.getElementById("replay-section");
     section.hidden = false; // unhide BEFORE mounting so the player measures real dimensions
     try {
+      // mountReplay also drives the narration audio in sync (one player).
       mountReplay(document.getElementById("replay"), report, ReplayerCtor);
     } catch (err) {
       // A broken replay shouldn't take the timeline down with it.
       renderErrorReport(document.getElementById("replay"), "Replay failed to mount: " + err, ENV);
+    }
+  }
+
+  // Standalone narration player ONLY when there's no replay to drive it.
+  if (!hasReplay && report.audio && report.audio.dataUrl) {
+    const audioSection = document.getElementById("audio-section");
+    audioSection.hidden = false;
+    try {
+      mountAudio(document.getElementById("audio"), report);
+    } catch (err) {
+      renderErrorReport(document.getElementById("audio"), "Audio failed to mount: " + err, ENV);
     }
   }
 

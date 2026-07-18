@@ -18,6 +18,7 @@ choose to share it. See [Privacy & data control](privacy.md).
 | [Session replay](session-replay.md) | Full DOM session replay of what happened, via rrweb |
 | [Data capture](data-capture.md) | Console logs, JS errors, network, browser logs, environment |
 | [Screenshots](screenshots.md) | Screenshots at start/stop, on errors, and on demand |
+| [Audio narration](audio-narration.md) | Opt-in mic narration, recorded locally and synced to the timeline |
 | [Bug report export](bug-report.md) | One self-contained, offline HTML file with a correlated timeline |
 | [AI manifest](ai-manifest.md) | An embedded, AI-readable index so agents can diagnose reports fast |
 | [Privacy & data control](privacy.md) | Nothing uploaded; everything local; you decide what's shared |

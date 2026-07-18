@@ -18,10 +18,27 @@ export async function launchExtension({ headful = !!process.env.HEADFUL } = {}) 
     channel: "chromium",
     headless: !headful,
     viewport: { width: 1280, height: 800 },
-    args: [`--disable-extensions-except=${ROOT}`, `--load-extension=${ROOT}`],
+    args: [
+      `--disable-extensions-except=${ROOT}`,
+      `--load-extension=${ROOT}`,
+      // Give headless Chromium a synthetic microphone and auto-accept the
+      // getUserMedia permission prompt, so the audio-capture e2e can grant and
+      // record without a real device or a manual click.
+      "--use-fake-device-for-media-stream",
+      "--use-fake-ui-for-media-stream",
+    ],
   });
   const sw = context.serviceWorkers()[0] ?? (await context.waitForEvent("serviceworker"));
-  return { context, extensionId: new URL(sw.url()).host };
+  const extensionId = new URL(sw.url()).host;
+  // Pre-grant mic to the extension origin so the popup's permission check
+  // (navigator.permissions.query) reports "granted" and enumerates inline,
+  // instead of routing to the focused mic-permission page (not needed headless).
+  try {
+    await context.grantPermissions(["microphone"], { origin: `chrome-extension://${extensionId}` });
+  } catch {
+    // older channels may not support origin-scoped grants — fake-ui still covers capture
+  }
+  return { context, extensionId };
 }
 
 // Serves test/e2e/fixture.html over http — content scripts don't run on
@@ -52,7 +69,13 @@ export async function openPopup(context, extensionId) {
   const popup = await context.newPage();
   await popup.setViewportSize({ width: 360, height: 440 });
   await popup.goto(`chrome-extension://${extensionId}/popup.html`);
-  await popup.locator("#toggle").waitFor();
+  // The control surface is now the <openjam-popup> custom element. Wait for it to
+  // upgrade (shadow DOM populated) so the page — and its runtime messaging — is live.
+  await popup.locator("openjam-popup").waitFor();
+  await popup.waitForFunction(() => {
+    const el = document.querySelector("openjam-popup");
+    return !!el?.shadowRoot?.querySelector("button");
+  });
   return popup;
 }
 

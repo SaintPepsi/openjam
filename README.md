@@ -5,10 +5,10 @@
 > 🔒 **Nothing is ever uploaded — you have full control over your data.** Everything stays on your machine; the entire bug report is a single local file that only travels if *you* choose to share it. It's a digital-ownership ethos we share with [FULU](https://www.fulu.org/).
 
 An open-source take on [Jam.dev](https://jam.dev): a Chrome extension that captures
-**console logs, network requests, JS errors, screenshots, device/environment info, and a
-full DOM session replay** ([rrweb](https://github.com/rrweb-io/rrweb)) onto a single
-correlated timeline, then exports a **self-contained HTML bug report** — open it offline
-and watch the session play back.
+**console logs, network requests, JS errors, screenshots, device/environment info, a
+full DOM session replay** ([rrweb](https://github.com/rrweb-io/rrweb)), and **opt-in local
+mic narration** onto a single correlated timeline, then exports a **self-contained HTML bug
+report** — open it offline and watch the session play back.
 
 No backend, no account, no telemetry. Everything stays on your machine
 ([privacy policy](PRIVACY.md)).
@@ -197,7 +197,7 @@ replay iframe is ever created), and `build.mjs` bundles the engine directly inst
 - `PHASE_2_PLAN.md` — compressed exports (fflate) for large captures
 - `PHASE_3_PLAN.md` — hybrid CDP pixel keyframes for canvas/WebGL/cross-origin
 - `PHASE_4_PLAN.md` — Firefox/Safari via injection-based capture
-- Audio capture (tab audio / mic narration) on the timeline — requested by first users
+- Tab audio capture on the timeline (mic narration shipped in 0.5.0) — requested by first users
 
 ## Reporting OpenJam bugs
 

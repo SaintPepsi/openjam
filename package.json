@@ -1,6 +1,6 @@
 {
   "name": "openjam",
-  "version": "0.4.2",
+  "version": "0.6.2",
   "private": true,
   "type": "module",
   "description": "Open-source jam.dev alternative: Chrome MV3 extension capturing console/network/errors/screenshots/device + rrweb session replay on one timeline, exported as a self-contained HTML bug report.",
@@ -14,7 +14,7 @@
     "screenshots": "node scripts/screenshots.mjs",
     "icons": "node scripts/icons.mjs",
     "redact": "node scripts/redact-report.mjs",
-    "package": "npm run build && zip -r openjam.zip manifest.json LICENSE background.js event-kinds.js manifest.js issue-link.js popup.html popup.js viewer.html viewer.js renderer.js report-builder.js icons dist src/generated"
+    "package": "npm run build && zip -r openjam.zip manifest.json LICENSE background.js event-kinds.js manifest.js issue-link.js popup.html popup.js openjam-popup.js viewer.html viewer.js renderer.js waveform.js report-builder.js audio-sync.js offscreen.html offscreen.js mic-permission.html mic-permission.js icons dist src/generated"
   },
   "repository": {
     "type": "git",

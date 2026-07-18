@@ -37,6 +37,14 @@ try {
   const popup = await openPopup(context, extensionId);
   await popup.screenshot({ path: path.join(OUT, "popup-idle.png") });
 
+  // Enable narration through the real toggle so the shots show the checked box
+  // and mic picker, and the recording carries audio → the viewer waveform strip.
+  // The harness launches with --use-fake-device-for-media-stream (a synthetic
+  // tone) + auto-granted mic, so this records a real, decodable clip — no device.
+  await popup.locator("[data-act=mic]").click();
+  await popup.locator("[data-act=mic][aria-checked=true]").waitFor();
+  await popup.locator("openjam-popup select option").first().waitFor({ state: "attached" }); // wait for a populated picker (>=1 option), not the always-present empty <select>
+
   const tabId = await tabIdOf(popup, fixtureServer.url);
   const started = await sendAction(popup, { action: "start", tabId });
   if (!started.ok) throw new Error("start failed: " + started.error);
@@ -51,13 +59,25 @@ try {
 
   // The popup polls getStatus every second; wait for it to show recording.
   await popup.bringToFront();
-  await popup.locator("#toggle", { hasText: "Stop & open report" }).waitFor();
+  await popup.locator("openjam-popup [data-act=toggle]", { hasText: "Stop & open report" }).waitFor();
   await popup.screenshot({ path: path.join(OUT, "popup-recording.png") });
 
   const viewer = await stopAndOpenViewer(context, popup);
   await viewer.locator(".row").first().waitFor();
   await viewer.locator("#replay .replayer-wrapper").waitFor();
-  await viewer.waitForTimeout(500); // replay first frame
+  const waveform = viewer.locator("#replay .oj-waveform"); // narration → waveform strip
+  await waveform.waitFor();
+  await viewer.waitForTimeout(800); // replay first frame + waveform peaks paint
+  // The replay section is taller than the scroll viewport, so the waveform (its
+  // last element, and the audio feature this shot exists to show) sits just below
+  // the fold. Scroll the #scroll region by exactly that overflow: this lands the
+  // player controls + waveform at the bottom of the crop and clips only the top of
+  // the tall replay stage — never scrolling far enough to reveal the report below.
+  await viewer.evaluate(() => {
+    const scroll = document.getElementById("scroll");
+    const sec = document.getElementById("replay-section");
+    scroll.scrollTop += sec.getBoundingClientRect().bottom - scroll.getBoundingClientRect().bottom;
+  });
   await viewer.screenshot({ path: path.join(OUT, "viewer.png") });
 
   await viewer.locator(".row", { hasText: "counter is now" }).first().click();

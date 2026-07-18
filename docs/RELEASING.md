@@ -4,11 +4,13 @@ How automated Chrome Web Store publishing is wired, and the repeatable release
 loop. The repo plumbing is `release.yml` + [`PlasmoHQ/bpp`](https://github.com/PlasmoHQ/bpp),
 which publishes on every `v*` tag **when the `SUBMIT_KEYS` secret exists**.
 
-**Status (2026-06-24):** v0.4.2 submitted to the CWS, **Pending review**. CWS item
-ID `oljdbmjhfjnhnpjcehcnkbbjdgnpjdaj`. **`SUBMIT_KEYS` is set and verified** (the
-refresh token mints an access token with the `chromewebstore` scope) — so the
+**Status (2026-07-06):** v0.4.2 **approved and live** on the CWS (2026-06-26). CWS
+item ID `oljdbmjhfjnhnpjcehcnkbbjdgnpjdaj`. **`SUBMIT_KEYS` is set and verified**
+(the refresh token mints an access token with the `chromewebstore` scope) — so the
 one-time credential setup below is **done**; it's recorded here for the next time
-the token needs rotating or for adding Edge.
+the token needs rotating or for adding Edge. v0.5.0 will be the first tag-driven
+automated release; it adds the `offscreen` permission, which needs a justification
+in the dashboard's Privacy practices tab before publish (see `STORE_LISTING.md`).
 
 > The steps below are the path actually followed, on Google's current **Google
 > Auth Platform** UI (it replaced the old standalone "OAuth consent screen").
@@ -141,8 +143,9 @@ https.request("https://oauth2.googleapis.com/token",{method:"POST",headers:{"Con
 
 ## Releasing a new version (the repeatable loop)
 
-> ⏳ Hold the first automated tag until the manual v0.4.2 review is **approved/live** —
-> `bpp` uploads *and* publishes, which conflicts with an item still in review.
+> ✅ The hold on automated tagging is lifted — v0.4.2 was approved and went live
+> 2026-06-26. (`bpp` uploads *and* publishes, which conflicts with an item still
+> in review — only tag while nothing is pending.)
 
 1. Bump `version` in `manifest.json` + `package.json` (e.g. `0.4.3`), open a PR, merge.
 2. Tag and push from `main`:

@@ -6,3 +6,8 @@ src/generated/
 openjam.zip
 test-results/
 eval/out/
+.gate/
+docs/tickets/
+
+# devcontainer credential staging (scripts/devcontainer-auth.mjs)
+.devcontainer/.claude-creds.json

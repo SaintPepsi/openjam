@@ -66,5 +66,7 @@ export function buildManifest(report) {
   const failuresOmitted = Math.max(0, failures.length - MAX_FAILURES);
   const capped = failuresOmitted ? failures.slice(0, MAX_FAILURES) : failures;
 
-  return { _doc: DOC, schema: LEGEND, counts, failures: capped, failuresOmitted };
+  const out = { _doc: DOC, schema: LEGEND, counts, failures: capped, failuresOmitted };
+  if (report && report.audio) out.audio = { durationMs: report.audio.durationMs, mime: report.audio.mime };
+  return out;
 }
