@@ -2,7 +2,8 @@
   "name": "OpenJam Dev",
   "image": "mcr.microsoft.com/playwright:v1.60.0-jammy",
   "mounts": [
-    "source=openjam-node_modules,target=${containerWorkspaceFolder}/node_modules,type=volume"
+    "source=node_modules-${devcontainerId},target=${containerWorkspaceFolder}/node_modules,type=volume",
+    "source=${localEnv:HOME}/.claude/skills,target=/home/pwuser/.claude/skills,type=bind,readonly"
   ],
   "remoteUser": "pwuser",
   "initializeCommand": "node scripts/devcontainer-auth.mjs --stage",
@@ -15,5 +16,5 @@
       "username": "pwuser"
     }
   },
-  "postCreateCommand": "sudo chown -R pwuser:pwuser node_modules && sudo npm install -g bun && npm ci && node scripts/devcontainer-auth.mjs --install"
+  "postCreateCommand": "sudo chown -R pwuser:pwuser node_modules && sudo mkdir -p /home/pwuser/.claude && sudo chown pwuser:pwuser /home/pwuser/.claude && sudo npm install -g bun && npm ci && node scripts/devcontainer-auth.mjs --install"
 }
