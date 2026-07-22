@@ -80,6 +80,10 @@ test("starts on the relay's start command and drains the buffer on the flush int
   // e2e acceptance test is the in-CI end-to-end lever since CI builds from
   // source; the e2e negative is a one-time manual confirmation).
   expect(capturedOpts.inlineImages).toBe(true);
+  // Issue #44 causal guard: exported reports were 87.6 MB, almost entirely
+  // lossless-PNG inlineImages. Disconfirming input — drop dataURLOptions (or
+  // change the type/quality) in src/rrweb-recorder.js and this goes red.
+  expect(capturedOpts.dataURLOptions).toEqual({ type: "image/webp", quality: 0.6 });
   currentEmit({ type: 3, timestamp: 1 });
   currentEmit({ type: 3, timestamp: 2 });
   currentEmit({ type: 3, timestamp: 3 });
