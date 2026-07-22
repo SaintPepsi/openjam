@@ -1,9 +1,10 @@
 // Redacts an exported OpenJam report (.html) and writes new redacted copies — one
-// per redaction "way" so each can be reviewed in isolation. Parses the embedded
-// report object (`<script id="openjam-data">`), runs the chosen way over it, and
-// swaps the result back into the same HTML so the redacted file renders through
-// OpenJam's own renderer + replay (report-builder.js:59 re-parses that script at
-// load). The input is never mutated; new files are written.
+// per redaction "way" so each can be reviewed in isolation. Decodes the embedded
+// report object (`<script id="openjam-data">`, gzip+base64), runs the chosen way
+// over it, and swaps the result back into the same HTML so the redacted file still
+// renders through OpenJam's own renderer + replay (report-builder.js inlines the
+// same codec and re-decodes that script at load). The input is never mutated;
+// new files are written.
 //
 //   node scripts/redact-report.mjs <input.html> [output.html]   # default way: tuned
 //   node scripts/redact-report.mjs <input.html> --way=aggressive
@@ -16,6 +17,7 @@
 // sets live inline; the shipping engine (redaction-engine.js) is a separate
 // deliverable — see docs/pii-redaction/.
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { encodeOjData, decodeOjData } from "../src/generated/codec.js";
 
 // ---- pattern library ------------------------------------------------------
 const luhn = (s) => {
@@ -146,7 +148,11 @@ const makeRedactor = (way) => {
 };
 
 // ---- swap embedded data + manifest, leave everything else untouched -------
-const esc = (obj) => JSON.stringify(obj).replace(/</g, "\\u003c"); // same contract as report-builder.js:16
+// #openjam-ai (manifest) is plain JSON — same contract as report-builder.js.
+// #openjam-data is gzip+base64 (issue #44) — decode/re-encode with the same
+// codec bundle report-builder.js inlines into the export, so a redacted file
+// still opens: no esc() needed on that side, base64's alphabet can't contain "<".
+const esc = (obj) => JSON.stringify(obj).replace(/</g, "\\u003c");
 const srcHtml = readFileSync(input, "utf8");
 const grab = (html, id) => {
   const m = html.match(new RegExp(`(<script id="${id}"[^>]*>)([\\s\\S]*?)(</script>)`));
@@ -164,7 +170,7 @@ for (const way of ways) {
   const { redact, stats } = makeRedactor(way);
   // Replace via a FUNCTION so `$` in the JSON isn't read as a String.replace
   // special pattern ($&, $', $`) — that would splice the document into itself.
-  let html = srcHtml.replace(data0.whole, () => data0.open + esc(redact(JSON.parse(data0.body))) + data0.close);
+  let html = srcHtml.replace(data0.whole, () => data0.open + encodeOjData(redact(decodeOjData(data0.body))) + data0.close);
   if (ai0) html = html.replace(ai0.whole, () => ai0.open + esc(redact(JSON.parse(ai0.body))) + ai0.close);
 
   // corruption canary: redaction only adds short tokens, so output ≈ input.

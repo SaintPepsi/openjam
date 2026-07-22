@@ -22,6 +22,10 @@ diagnose.
 
 - The manifest is an index/legend, not a second copy of the data — the events live in
   `#openjam-data`.
+- `#openjam-data` is gzip+base64 (`type="application/gzip;base64"`, issue #44 — shrinks
+  the dominant contributor to export size), not plain JSON. Don't `JSON.parse` it. The
+  export inlines a decoder as the global `OJCodec`: `OJCodec.decodeOjData(text)`. Outside
+  a browser, the same function ships at `src/generated/codec.js` (built by `build.mjs`).
 
 ## Test data
 

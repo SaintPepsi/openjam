@@ -10,7 +10,8 @@ const DOC =
   "Each event = {t,kind,title,detail}. failures[] indices ('i') point into that array; " +
   "at most " + MAX_FAILURES + " are listed and failuresOmitted counts any beyond that. " +
   "counts['console.error'] is a subset of counts.console, not a separate kind. " +
-  "Extract #openjam-data for full event detail.";
+  "#openjam-data holds full event detail but is gzip+base64 (not plain JSON) — " +
+  "decode it with the inlined OJCodec.decodeOjData(text), don't parse it directly.";
 
 function truncate(s) {
   if (typeof s !== "string" || s.length <= MESSAGE_CAP) return s;
