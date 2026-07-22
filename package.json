@@ -23,6 +23,7 @@
   "license": "GPL-3.0-or-later",
   "dependencies": {
     "@rrweb/replay": "2.0.1",
+    "fflate": "0.8.3",
     "rrweb": "2.0.1"
   },
   "devDependencies": {

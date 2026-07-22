@@ -16,7 +16,8 @@
 
 import { renderReport, mountReplay, mountAudio, REPORT_CSS, REPLAY_CSS } from "./renderer.js";
 import { buildManifest } from "./manifest.js";
-import { WAVEFORM_JS } from "./src/generated/player-assets.js";
+import { WAVEFORM_JS, CODEC_IIFE } from "./src/generated/player-assets.js";
+import { encodeOjData } from "./src/generated/codec.js";
 
 // A report's rrwebEvents may be a JSON string (new — stored stringified to clear
 // Chrome's Mojo ~100-depth cap) or a plain array (old reports, synthetic test
@@ -36,8 +37,16 @@ function asEventArray(v) {
 export function buildReportHTML(report, replayAssets) {
   report = { ...report, rrwebEvents: asEventArray(report.rrwebEvents) };
   const meta = report.meta || {};
-  // Escape "<" so the embedded JSON can never break out of the <script> tag.
-  const dataJson = JSON.stringify(report).replace(/</g, "\\u003c");
+  // #openjam-data is gzip+base64'd (issue #44: a report with 44 inlined images
+  // was 87.6 MB — the DOM/mutation/network JSON itself is a secondary but real
+  // contributor, and this shrinks it independent of the image fix). Base64's
+  // alphabet (A-Za-z0-9+/=) can never contain "<", so — unlike the old raw-JSON
+  // path — there is no </script> breakout to neutralise here; the codec bundle
+  // (CODEC_IIFE, inlined below) decodes it back to the report object at view
+  // time. The #openjam-ai manifest stays plain, uncompressed JSON on purpose:
+  // it's designed for an AI/human to read straight off the HTML source with no
+  // decode step (manifest.js), so compressing it would defeat its own point.
+  const dataB64 = encodeOjData(report);
   let manifestJson = "{}";
   try {
     manifestJson = JSON.stringify(buildManifest(report)).replace(/</g, "\\u003c");
@@ -75,10 +84,11 @@ ${hasReplay ? `<div id="replay-section"><h2>Session replay</h2><div id="replay">
 ${hasStandaloneAudio ? `<div id="audio-section"><h2>Narration</h2><div id="audio"></div></div>` : ""}
 <div id="app"></div>
 <script id="openjam-ai" type="application/json">${manifestJson}</script>
-<script id="openjam-data" type="application/json">${dataJson}</script>
+<script id="openjam-data" type="application/gzip;base64">${dataB64}</script>
+<script>${forInlineScript(CODEC_IIFE)}</script>
 <script>
 ${renderReport.toString()}
-renderReport(document.getElementById("app"), JSON.parse(document.getElementById("openjam-data").textContent));
+renderReport(document.getElementById("app"), OJCodec.decodeOjData(document.getElementById("openjam-data").textContent));
 </script>
 ${inlineWaveform ? `<script>${waveformJs}</script>` : ""}
 ${
@@ -87,7 +97,7 @@ ${
 <script>
 ${mountReplay.toString()}
 try {
-  var ojReport = JSON.parse(document.getElementById("openjam-data").textContent);
+  var ojReport = OJCodec.decodeOjData(document.getElementById("openjam-data").textContent);
   mountReplay(document.getElementById("replay"), ojReport, window.RRWebReplayer);
 } catch (err) {
   document.getElementById("replay-section").hidden = true;
@@ -98,7 +108,7 @@ try {
 }
 ${hasStandaloneAudio ? `<script>
 ${mountAudio.toString()}
-try { mountAudio(document.getElementById("audio"), JSON.parse(document.getElementById("openjam-data").textContent)); }
+try { mountAudio(document.getElementById("audio"), OJCodec.decodeOjData(document.getElementById("openjam-data").textContent)); }
 catch (err) { var s = document.getElementById("audio-section"); if (s) s.hidden = true; console.error("audio mount failed", err); }
 </script>` : ""}
 </body>

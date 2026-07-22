@@ -67,6 +67,12 @@ Each report embeds a small `<script id="openjam-ai" type="application/json">` ma
 `i` fields point into the sorted `events[]` array in `#openjam-data`. Orient from the
 manifest, then extract only the events you need by index — no need to parse the whole blob.
 
+`#openjam-data` itself is gzip+base64, not plain JSON (its `type` attribute says so:
+`application/gzip;base64`) — don't `JSON.parse` it directly. The exported HTML already
+inlines a decoder as the global `OJCodec` (`OJCodec.decodeOjData(text)` gunzips + parses
+it back to the report object); from outside a browser, the same function is available at
+`src/generated/codec.js` (Node, after `npm run build`).
+
 ## Install
 
 [**Add OpenJam from the Chrome Web Store**](https://chromewebstore.google.com/detail/openjam/oljdbmjhfjnhnpjcehcnkbbjdgnpjdaj)

@@ -1,10 +1,16 @@
 // Memory/size tests for the self-contained export (report-builder.js):
 // the player UMD must be embedded exactly once regardless of event count,
 // export size must grow linearly with events (no accidental duplication),
-// and the "<" escaping must inflate hostile content boundedly (< = 6
-// bytes per "<", never exponential).
+// and #openjam-data (gzip+base64) must never be able to break out of its
+// <script> tag regardless of hostile input.
 import { test, expect } from "bun:test";
 import { buildReportHTML } from "../report-builder.js";
+import { decodeOjData } from "../src/generated/codec.js";
+
+// #openjam-data is now `<script id="openjam-data" type="application/gzip;base64">`
+// (base64, not JSON) — decode it the same way the exported HTML's inlined
+// OJCodec does, so these tests exercise the real embed/extract contract.
+const ojData = (html) => decodeOjData(html.match(/id="openjam-data" type="application\/gzip;base64">([\s\S]*?)<\/script>/)[1]);
 
 const replayAssets = {
   ENGINE_IIFE: "window.RRWebReplayer=function(){};/*UMD_MARKER*/",
@@ -40,17 +46,16 @@ test("export size grows linearly with replay events — no duplication blowup", 
   expect(secondThousand).toBeLessThan(firstThousand * 1.2);
 });
 
-test("hostile '<' content inflates boundedly (6 bytes per '<', not exponential)", () => {
-  const hostiles = "<".repeat(1000);
-  const base = buildReportHTML(makeReport(2, { title: "x" }), replayAssets).length;
-  const inflated = buildReportHTML(makeReport(2, { title: "x" + hostiles }), replayAssets).length;
-  // each "<" becomes "<" (6 chars) in the JSON blob; allow slack for quoting
-  expect(inflated - base).toBeLessThan(1000 * 6 + 200);
-  // and the breakout is actually neutralised
+test("hostile '<'/'</script>' content can never break out of #openjam-data (base64 has no '<')", () => {
+  // Disconfirming input: base64's alphabet is A-Za-z0-9+/= — it structurally
+  // cannot contain "<", so unlike the old raw-JSON embed there is no per-"<"
+  // inflation to bound and no escaping step that could be forgotten/broken.
+  // Assert the stronger, input-independent property instead: whatever hostile
+  // text goes in, the emitted #openjam-data body never contains "<" at all.
   const html = buildReportHTML(makeReport(2, { title: "</script><script>alert(1)</script>" }), replayAssets);
-  const dataBlock = html.match(/id="openjam-data" type="application\/json">([\s\S]*?)<\/script>/)[1];
-  expect(dataBlock).not.toContain("</script>");
-  expect(JSON.parse(dataBlock).events[0].title).toContain("</script>"); // survives round-trip
+  const dataBlock = html.match(/id="openjam-data" type="application\/gzip;base64">([\s\S]*?)<\/script>/)[1];
+  expect(dataBlock).not.toContain("<");
+  expect(ojData(html).events[0].title).toContain("</script>"); // survives round-trip
 });
 
 test("export embeds an #openjam-ai manifest before #openjam-data", () => {
@@ -79,10 +84,9 @@ test("hostile content in the manifest blob can't break out of its <script> tag",
   expect(manifest.failures[0].message).toContain("</script>"); // hostile text survives JSON round-trip
 });
 
-test("#openjam-data block is unchanged (still parseable, full events)", () => {
+test("#openjam-data block decodes to the full report (still round-trips)", () => {
   const html = buildReportHTML(makeReport(0), null);
-  const data = html.match(/id="openjam-data" type="application\/json">([\s\S]*?)<\/script>/)[1];
-  expect(JSON.parse(data).events).toHaveLength(1);
+  expect(ojData(html).events).toHaveLength(1);
 });
 
 test("accepts rrwebEvents as both a string and an array; #openjam-data always carries an array", () => {
@@ -99,8 +103,7 @@ test("accepts rrwebEvents as both a string and an array; #openjam-data always ca
 
   for (const report of [arrayReport, stringReport]) {
     const html = buildReportHTML(report, replayAssets);
-    const data = html.match(/id="openjam-data" type="application\/json">([\s\S]*?)<\/script>/)[1];
-    const embedded = JSON.parse(data).rrwebEvents;
+    const embedded = ojData(html).rrwebEvents;
     expect(Array.isArray(embedded)).toBe(true); // never a nested string
     expect(embedded).toHaveLength(3);
     expect(embedded[0].timestamp).toBe(1717900000000);

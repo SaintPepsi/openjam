@@ -16,7 +16,11 @@ sharing: it only leaves your machine if *you* send the file. See
 
 ## What to expect / limitations
 
-- Everything is inlined, so the file size scales with session length and captured data.
+- Everything is inlined, so the file size scales with session length and captured data
+  (issue #44 — a real recording was 87.6 MB). The `#openjam-data` blob itself is
+  gzip+base64'd (see [AI manifest](ai-manifest.md) for the decode contract); session
+  replay's inlined `<img>`s may also be webp-encoded rather than lossless PNG depending
+  on whether that separate fix (`src/rrweb-recorder.js`) has landed.
 - The report is built locally by `report-builder.js` and rendered by `viewer.js` / `renderer.js`.
 
 ## Test data
