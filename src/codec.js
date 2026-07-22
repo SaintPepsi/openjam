@@ -34,7 +34,13 @@ function base64ToBytes(b64) {
 }
 
 export function encodeOjData(value) {
-  return bytesToBase64(gzipSync(strToU8(JSON.stringify(value))));
+  const json = JSON.stringify(value);
+  // JSON.stringify(undefined) returns the *value* undefined, not a string — every
+  // current caller always passes an object, but strToU8(undefined) would otherwise
+  // fail confusingly deep inside fflate (or worse, produce a blob that decodes to a
+  // JSON syntax error later, far from this call). Fail here, at the actual cause.
+  if (typeof json !== "string") throw new TypeError("encodeOjData: value is not JSON-serializable");
+  return bytesToBase64(gzipSync(strToU8(json)));
 }
 
 export function decodeOjData(base64) {

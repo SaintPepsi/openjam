@@ -173,7 +173,11 @@ for (const way of ways) {
   let html = srcHtml.replace(data0.whole, () => data0.open + encodeOjData(redact(decodeOjData(data0.body))) + data0.close);
   if (ai0) html = html.replace(ai0.whole, () => ai0.open + esc(redact(JSON.parse(ai0.body))) + ai0.close);
 
-  // corruption canary: redaction only adds short tokens, so output ≈ input.
+  // corruption canary: #openjam-ai stays plain JSON (redaction ~ token substitution,
+  // output ≈ input there), and #openjam-data's redacted content re-gzips through the
+  // same codec (redaction tokens are themselves repetitive, so this side typically
+  // shrinks, not grows) — either way a >1.5x blowup means something broke, not a
+  // normal redaction outcome.
   if (html.length > srcHtml.length * 1.5) {
     console.error(`error [${way}]: output ${html.length}B >> input ${srcHtml.length}B — refusing to write (likely corruption).`);
     continue;
