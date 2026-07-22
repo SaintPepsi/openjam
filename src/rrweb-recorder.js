@@ -175,11 +175,16 @@ function main() {
     // page already loaded with crossOrigin="anonymous" (no new destination,
     // not new egress), then falls back to the untouched src with a
     // console.warn if the server still has no CORS headers.
-    // Ships default PNG (lossless); unlimitedStorage lifts the storage quota.
-    // Size knob if reports prove too large (reversible fast-follow):
-    // dataURLOptions: { type: "image/jpeg", quality: 0.8 }.
+    // inlineImages draws to canvas then re-encodes; without dataURLOptions that
+    // defaults to lossless PNG, which on image-heavy pages (product photos,
+    // posters, banners) is the dominant contributor to export size — a real
+    // report from issue #44 was 87.6 MB, almost entirely inlined PNGs. webp at
+    // 0.6 (REPLAY_DESIGN.md §4) is lossy but photographic content tolerates it
+    // fine and the size win is large; unlimitedStorage still covers the
+    // IndexedDB budget regardless.
     stopFn = record({
       inlineImages: true,
+      dataURLOptions: { type: "image/webp", quality: 0.6 },
       emit(event) {
         buffer.push(event);
         rewriteBlobImages(event); // resolve any blob: img srcs before this batch flushes
