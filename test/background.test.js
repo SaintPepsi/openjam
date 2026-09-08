@@ -22,14 +22,15 @@ globalThis.chrome = {
     detach: async () => {},
     sendCommand: async (_target, method) => {
       if (method === "Runtime.evaluate") {
+        // returnByValue: the evaluated object comes back as a value, not a string.
         return {
           result: {
-            value: JSON.stringify({
+            value: {
               userAgent: "test",
               url: "https://example.test/app",
               title: "Test page",
               viewport: { width: 100, height: 100 },
-            }),
+            },
           },
         };
       }
@@ -227,6 +228,19 @@ test("other attach failures keep the raw CDP error so the issue link carries it"
   attachFailure = null;
   expect(res.ok).toBe(false);
   expect(res.error).toBe("Could not attach debugger: Error: Another debugger is already attached to the tab with id: 7.");
+});
+
+test("a session records on the cdp lane and the report says so (meta.capture)", async () => {
+  // session.capture is THE signal for which lane a recording runs on; every
+  // consumer (viewer badge, manifest doc, degraded warning) reads it from meta.
+  // Disconfirming: drop the `capture: session.capture` copy in finalizeRecording.
+  expect((await dispatch({ action: "start", tabId: 1 })).ok).toBe(true);
+  expect((await dispatch({ action: "getStatus" })).capture).toBe("cdp");
+  await dispatch({ action: "stop" });
+  const report = store[storedReports()[0]];
+  expect(report.meta.capture).toBe("cdp");
+  expect(report.device.userAgent).toBe("test");
+  expect((await dispatch({ action: "getStatus" })).capture).toBe("cdp"); // last lane, until the next start
 });
 
 test("refuses non-recordable tabs with actionable advice, not a raw CDP error", async () => {

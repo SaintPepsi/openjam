@@ -14,7 +14,7 @@
     "screenshots": "node scripts/screenshots.mjs",
     "icons": "node scripts/icons.mjs",
     "redact": "node scripts/redact-report.mjs",
-    "package": "npm run build && zip -r openjam.zip manifest.json LICENSE background.js event-kinds.js manifest.js issue-link.js popup.html popup.js openjam-popup.js viewer.html viewer.js renderer.js waveform.js report-builder.js audio-sync.js offscreen.html offscreen.js mic-permission.html mic-permission.js icons dist src/generated"
+    "package": "npm run build && zip -r openjam.zip manifest.json LICENSE background.js event-kinds.js manifest.js issue-link.js popup.html popup.js openjam-popup.js viewer.html viewer.js renderer.js waveform.js report-builder.js audio-sync.js offscreen.html offscreen.js mic-permission.html mic-permission.js icons dist src/generated src/lanes src/capture-limits.js src/device-info.js"
   },
   "repository": {
     "type": "git",
