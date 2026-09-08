@@ -7,6 +7,7 @@ import { test, expect } from "bun:test";
 
 const store = {};
 const tabUrlById = {}; // per-test overrides for chrome.tabs.get(id).url
+let attachFailure = null; // per-test: chrome.debugger.attach throws this
 let storageSetFailures = 0;
 const createdTabs = [];
 const tabMessages = [];
@@ -15,7 +16,9 @@ const debuggerDetachListeners = [];
 
 globalThis.chrome = {
   debugger: {
-    attach: async () => {},
+    attach: async () => {
+      if (attachFailure) throw attachFailure;
+    },
     detach: async () => {},
     sendCommand: async (_target, method) => {
       if (method === "Runtime.evaluate") {
@@ -199,6 +202,31 @@ test("concurrent stop clicks produce one report and one viewer tab", async () =>
   const [r1, r2] = await Promise.all([dispatch({ action: "stop" }), dispatch({ action: "stop" })]);
   expect([r1.ok, r2.ok].sort()).toEqual([false, true]);
   expect(createdTabs.length).toBe(1);
+});
+
+test("a foreign extension's iframe on a normal page gets named advice, not the raw CDP error (#48)", async () => {
+  // The tab URL is a plain https page, so the pre-attach guard passes; Chrome
+  // then rejects the attach because another extension owns one of its frames.
+  // Disconfirming input: change the thrown message to any other CDP error and
+  // the /Another extension/ assertion fails (falls through to the generic path).
+  attachFailure = new Error("Cannot access a chrome-extension:// URL of different extension");
+  const res = await dispatch({ action: "start", tabId: 7 });
+  attachFailure = null;
+  expect(res.ok).toBe(false);
+  expect(res.error).toMatch(/Another extension has added content to this page/);
+  expect(res.error).not.toMatch(/Could not attach debugger|chrome-extension:/);
+  expect((await dispatch({ action: "getStatus" })).recording).toBe(false);
+  // A second start on a clean tab works: the failed attach left no session state.
+  expect((await dispatch({ action: "start", tabId: 7 })).ok).toBe(true);
+  await dispatch({ action: "stop" });
+});
+
+test("other attach failures keep the raw CDP error so the issue link carries it", async () => {
+  attachFailure = new Error("Another debugger is already attached to the tab with id: 7.");
+  const res = await dispatch({ action: "start", tabId: 7 });
+  attachFailure = null;
+  expect(res.ok).toBe(false);
+  expect(res.error).toBe("Could not attach debugger: Error: Another debugger is already attached to the tab with id: 7.");
 });
 
 test("refuses non-recordable tabs with actionable advice, not a raw CDP error", async () => {

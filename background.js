@@ -379,6 +379,21 @@ async function recordableTabError(tabId) {
   return "OpenJam can only record normal web pages, not browser or extension pages. Switch to the tab you want to record, then press Start.";
 }
 
+// chrome.debugger.attach vets EVERY frame in the tab, not just the page URL
+// (chromium: debugger_api.cc, ExtensionMayAttachToRenderFrameHost). One iframe
+// from another extension — a password manager's inline menu, a grammar checker,
+// a shopping assistant — makes the whole tab unattachable, while tabs.get still
+// reports a normal https URL so recordableTabError() lets it through (#48).
+// There is no workaround from our side, so name the cause and the way out.
+const FOREIGN_EXTENSION_FRAME = /chrome-extension:\/\/ URL of different extension/;
+
+function attachError(err) {
+  if (FOREIGN_EXTENSION_FRAME.test(String(err))) {
+    return "Another extension has added content to this page (usually a password manager or grammar checker), which blocks Chrome from letting OpenJam record it. Disable that extension on this site, reload the page, and try again.";
+  }
+  return "Could not attach debugger: " + String(err);
+}
+
 async function startRecording(tabId) {
   if (session.recording) return { ok: false, error: "Already recording." };
   const guard = await recordableTabError(tabId);
@@ -402,7 +417,7 @@ async function startRecording(tabId) {
     await chrome.debugger.attach({ tabId }, PROTOCOL_VERSION);
   } catch (err) {
     session.recording = false;
-    return { ok: false, error: "Could not attach debugger: " + String(err) };
+    return { ok: false, error: attachError(err) };
   }
 
   await sendCmd("Network.enable", {});
