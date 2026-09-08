@@ -21,6 +21,30 @@ const REWRITE_TIMEOUT_MS = 300;
 const TO_RELAY = "oj-rec-to-relay"; // envelope tag for messages we send
 const FROM_RELAY = "oj-relay-to-rec"; // envelope tag for messages we receive
 
+// Throttles high-frequency incremental events (REPLAY_DESIGN.md §4). mousemove/scroll
+// already coalesce to one event per window (ms); media (play/pause/seek/volume) and
+// input dedupe to the last value in a burst — none of these lose replay fidelity, they
+// just drop redundant intermediate samples a human was never going to scrub to.
+const SAMPLING = { mousemove: 50, scroll: 150, media: 800, input: "last" };
+// Drops DOM subtrees that don't affect what the replay looks like: <script>/preload
+// tags (never rendered), comments, and non-visible <head> metadata (favicon links,
+// SEO/social meta tags). headMetaAuthorship/headMetaDescKeywords are ON here (unlike
+// rrweb's own `slimDOMOptions: true` shorthand, which leaves them off because they can
+// carry hidden info some consumers want) — deliberately more aggressive, since a bug
+// report's replay has no use for a page's meta description or author tag.
+const SLIM_DOM_OPTIONS = {
+  script: true,
+  comment: true,
+  headFavicon: true,
+  headWhitespace: true,
+  headMetaDescKeywords: true,
+  headMetaSocial: true,
+  headMetaRobots: true,
+  headMetaHttpEquiv: true,
+  headMetaAuthorship: true,
+  headMetaVerification: true,
+};
+
 // Emit-side blob: -> data: rewriter (WHY):
 // inlineImages (below) only runs in rrweb's node serializer — full snapshot and
 // mutation-*added* nodes. A src set MID-recording via attribute mutation (the
@@ -180,6 +204,8 @@ function main() {
     // dataURLOptions: { type: "image/jpeg", quality: 0.8 }.
     stopFn = record({
       inlineImages: true,
+      sampling: SAMPLING,
+      slimDOMOptions: SLIM_DOM_OPTIONS,
       emit(event) {
         buffer.push(event);
         rewriteBlobImages(event); // resolve any blob: img srcs before this batch flushes

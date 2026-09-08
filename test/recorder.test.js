@@ -80,6 +80,23 @@ test("starts on the relay's start command and drains the buffer on the flush int
   // e2e acceptance test is the in-CI end-to-end lever since CI builds from
   // source; the e2e negative is a one-time manual confirmation).
   expect(capturedOpts.inlineImages).toBe(true);
+  // Issue #44 causal guard: sampling throttles high-frequency events (mousemove/
+  // scroll/media/input) and slimDOMOptions drops non-visible <head>/script/comment
+  // nodes from snapshots — both cut export size. Disconfirming input: drop either
+  // option (or its fields) in src/rrweb-recorder.js and this goes red.
+  expect(capturedOpts.sampling).toEqual({ mousemove: 50, scroll: 150, media: 800, input: "last" });
+  expect(capturedOpts.slimDOMOptions).toEqual({
+    script: true,
+    comment: true,
+    headFavicon: true,
+    headWhitespace: true,
+    headMetaDescKeywords: true,
+    headMetaSocial: true,
+    headMetaRobots: true,
+    headMetaHttpEquiv: true,
+    headMetaAuthorship: true,
+    headMetaVerification: true,
+  });
   currentEmit({ type: 3, timestamp: 1 });
   currentEmit({ type: 3, timestamp: 2 });
   currentEmit({ type: 3, timestamp: 3 });
