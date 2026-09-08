@@ -12,7 +12,9 @@
 //
 // Disconfirming inputs: remove the foreign iframe before starting → capture is
 // "cdp" and the warning assertions fail; comment out the probe arming in
-// src/lanes/inject.js start() → the console/network/error assertions fail.
+// src/lanes/inject.js start() → the console/network/error assertions fail;
+// move lane.quiesce() after the 400 ms wait in background.js stopRecording →
+// the console assertion fails (its batch arrives after recording=false).
 import { test, expect } from "@playwright/test";
 import path from "node:path";
 import { readFileSync } from "node:fs";
@@ -69,11 +71,27 @@ test("another extension's iframe: recording runs on the inject lane and names th
   expect(started.warning).toContain("reduced mode: extension " + foreignId);
   expect((await sendAction(popup, { action: "getStatus" })).capture).toBe("inject");
 
-  // Drive the fixture's real handlers: console.log, fetch(self), uncaught throw.
+  // The probe is injected into the recorded tab only, never by manifest: a
+  // second tab opened during the recording has an untouched console/fetch.
+  // Disconfirming: put dist/page-probe.js back in manifest.json content_scripts.
+  const bystander = await context.newPage();
+  await bystander.goto(fixtureServer.url, { waitUntil: "load" });
+  expect(await bystander.evaluate(() => window.__ojProbeLoaded === undefined)).toBe(true);
+  await bystander.close();
+  await page.bringToFront();
+
+  // Drive the fixture's real handlers: console.log, then a reload mid-recording
+  // (the new document gets a fresh probe via the relay's hello), then console,
+  // fetch(self) and an uncaught throw in the reloaded document. No settle wait:
+  // stop must flush the probe's buffer itself.
+  // Disconfirming: drop the injectProbe call from the oj-rrweb-hello handler →
+  // only one "counter is now 1" console event survives.
+  await page.locator("#inc").click();
+  await page.reload({ waitUntil: "load" });
+  await expect(page.frameLocator("#foreign-ext-frame").locator("body")).toHaveText("foreign extension frame");
   await page.locator("#inc").click();
   await page.locator("#fetchBtn").click();
   await page.locator("#errBtn").click();
-  await page.waitForTimeout(700); // probe flushes every 500ms
 
   const viewer = await stopAndOpenViewer(context, popup);
   const report = await latestReport(popup);
@@ -81,7 +99,7 @@ test("another extension's iframe: recording runs on the inject lane and names th
   expect(report.device.userAgent).toContain("Chrome");
   const byKind = (k) => report.events.filter((e) => e.kind === k);
   expect(byKind("log")[0].detail.blockedBy).toEqual([foreignId]);
-  expect(byKind("console").some((e) => e.title === "counter is now 1")).toBe(true);
+  expect(byKind("console").filter((e) => e.title === "counter is now 1")).toHaveLength(2); // before + after reload
   const fetched = byKind("network").find((e) => e.detail.url === fixtureServer.url);
   expect(fetched.detail).toMatchObject({ method: "GET", status: 200, resourceType: "fetch" });
   expect(fetched.detail.responseBody).toContain("OpenJam E2E Fixture");
@@ -116,6 +134,20 @@ test("popup shows the gold reduced-mode notice with a Manage extension button", 
   // Visual baseline of the reduced-mode popup: the gold notice naming the fixture
   // extension plus its Manage button. This PNG is what we show a reporter.
   await expect(popup.locator("openjam-popup .card")).toHaveScreenshot("popup-reduced-mode.png");
+  // The popup re-renders every second while recording. The Manage button must
+  // be the same element across renders: a keyboard user who tabbed onto it
+  // keeps focus, and it still opens chrome://extensions for the named extension.
+  // Disconfirming: rebuild the warning buttons unconditionally in _render →
+  // focus is lost within a second.
+  const manage = warn.locator("button.act");
+  await manage.focus();
+  await popup.waitForTimeout(1500);
+  expect(await popup.evaluate(() => document.querySelector("openjam-popup").shadowRoot.activeElement?.className)).toBe("act");
+  const manageTab = context.waitForEvent("page");
+  await manage.click();
+  const opened = await manageTab;
+  expect(opened.url()).toBe("chrome://extensions/?id=" + foreignId);
+  await opened.close();
   await sendAction(popup, { action: "stop" });
   await popup.close();
   await page.close();

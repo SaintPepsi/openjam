@@ -10,6 +10,7 @@ import { collectDeviceInfo } from "./device-info.js";
 
 const TO_RELAY = "oj-rec-to-relay"; // envelope tag for messages from the recorder
 const FROM_RELAY = "oj-relay-to-rec"; // envelope tag for messages to the recorder
+const PROBE_FLUSH_EVENT = "oj-probe-flush"; // the probe's synchronous pagehide hop
 
 function main() {
   // Whether the background wants this page recorded. Tracked so a recorder that
@@ -23,6 +24,26 @@ function main() {
   function toRecorder(kind) {
     window.postMessage({ __oj: FROM_RELAY, kind }, "*");
   }
+
+  function forwardProbeBatch(eventsJson) {
+    try {
+      chrome.runtime.sendMessage({ type: "oj-page-batch", eventsJson }, (res) => {
+        if (chrome.runtime.lastError) return;
+        if (res && res.stop) {
+          probe = false;
+          toRecorder("probe-stop");
+        }
+      });
+    } catch {
+      // extension reloaded mid-recording — nothing useful to do
+    }
+  }
+
+  // Probe → background, the synchronous way (pagehide). detail is a string:
+  // primitives cross the world boundary, objects don't.
+  document.addEventListener(PROBE_FLUSH_EVENT, (e) => {
+    if (typeof e.detail === "string") forwardProbeBatch(e.detail);
+  });
 
   // Recorder → background.
   window.addEventListener("message", (e) => {
@@ -50,17 +71,7 @@ function main() {
     } else if (msg.kind === "ready" && recording) {
       toRecorder("start");
     } else if (msg.kind === "probe-batch") {
-      try {
-        chrome.runtime.sendMessage({ type: "oj-page-batch", eventsJson: msg.eventsJson }, (res) => {
-          if (chrome.runtime.lastError) return;
-          if (res && res.stop) {
-            probe = false;
-            toRecorder("probe-stop");
-          }
-        });
-      } catch {
-        // extension reloaded mid-recording — nothing useful to do
-      }
+      forwardProbeBatch(msg.eventsJson);
     } else if (msg.kind === "probe-ready" && probe) {
       toRecorder("probe-start");
     }

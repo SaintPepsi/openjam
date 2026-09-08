@@ -21,5 +21,10 @@ test("net-end merges into the start event; failures retitle like the CDP lane", 
   const bad = pageEventToTimeline({ kind: "net-start", t: 3, requestId: "f2", method: "GET", url: "https://b/", resourceType: "fetch" });
   mergeNetworkEnd(bad, { failed: true, errorText: "TypeError: Failed to fetch", durationMs: 3 });
   expect(bad.title).toBe("FAILED https://b/");
-  expect(bad.detail).toMatchObject({ failed: true, errorText: "TypeError: Failed to fetch", durationMs: 3 });
+  expect(bad.detail).toMatchObject({ failed: true, canceled: false, errorText: "TypeError: Failed to fetch", durationMs: 3 });
+  // an aborted XHR is a cancel, same title the CDP lane gives Network.loadingFailed{canceled}
+  const gone = pageEventToTimeline({ kind: "net-start", t: 3, requestId: "x3", method: "GET", url: "https://c/", resourceType: "xhr" });
+  mergeNetworkEnd(gone, { failed: true, canceled: true, errorText: "aborted", durationMs: 1 });
+  expect(gone.title).toBe("CANCELED https://c/");
+  expect(gone.detail).toMatchObject({ failed: true, canceled: true, errorText: "aborted" });
 });

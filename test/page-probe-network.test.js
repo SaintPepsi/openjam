@@ -6,10 +6,10 @@ import { installNetworkProbe, headersToObject, parseRawHeaders } from "../src/pa
 
 const flush = () => new Promise((r) => setTimeout(r, 10));
 
-function makeEnv(fetchImpl) {
+function makeEnv(fetchImpl, opts = {}) {
   const emitted = [];
   const g = { fetch: fetchImpl };
-  installNetworkProbe({ emit: (e) => emitted.push(e), now: () => 1000, clock: () => 0 }, g);
+  installNetworkProbe({ emit: (e) => emitted.push(e), now: () => 1000, clock: () => 0, ...opts }, g);
   return { g, emitted };
 }
 
@@ -36,6 +36,86 @@ test("fetch: binary responses are not read; rejected fetches report failed and s
   const ends = emitted.filter((e) => e.kind === "net-end");
   expect(ends[0].responseBody).toBeUndefined();
   expect(ends[1]).toMatchObject({ failed: true, errorText: "TypeError: Failed to fetch" });
+});
+
+test("disarmed: no response body is read; event-stream bodies are never read even when armed", async () => {
+  // The probe sits in the page for the whole recording but must cost nothing
+  // when not armed: clone().text() is the one expensive step, so it's gated on
+  // isArmed(). Disconfirming: drop the isArmed() check before clone() → the
+  // clone below is observed.
+  let cloned = 0;
+  const mk = (type) => {
+    const r = new Response("data: x\n\n", { headers: { "content-type": type } });
+    const clone = r.clone.bind(r);
+    r.clone = () => (cloned++, clone());
+    return r;
+  };
+  const armed = { v: false };
+  const { g, emitted } = makeEnv(async () => mk("text/plain"), { isArmed: () => armed.v });
+  await g.fetch("x");
+  await flush();
+  expect(cloned).toBe(0);
+  expect(emitted.at(-1)).toMatchObject({ kind: "net-end", status: 200 });
+  expect(emitted.at(-1).responseBody).toBeUndefined();
+  armed.v = true;
+  await g.fetch("x");
+  await flush();
+  expect(cloned).toBe(1);
+  expect(emitted.at(-1).responseBody).toBe("data: x\n\n");
+  // A server-sent-events response never ends: reading it would buffer forever
+  // and its net-end would never emit. Disconfirming: drop the event-stream
+  // exclusion in classifyBody → cloned becomes 2.
+  const sse = makeEnv(async () => mk("text/event-stream"), { isArmed: () => true });
+  await sse.g.fetch("stream");
+  await flush();
+  expect(cloned).toBe(1);
+  expect(sse.emitted.at(-1)).toMatchObject({ kind: "net-end", mimeType: "text/event-stream" });
+});
+
+test("fetch: a throwing clone() never reaches the page as an unhandled rejection", async () => {
+  // Some wrappers return Response-likes whose clone() throws; our bookkeeping
+  // branch is off the page's promise chain, so it must swallow its own errors.
+  // Disconfirming: remove the .catch on the derived promise → bun reports an
+  // unhandled rejection and this test's process-level check fails.
+  const unhandled = [];
+  const onUnhandled = (err) => unhandled.push(err);
+  process.on("unhandledRejection", onUnhandled);
+  const res = new Response("ok", { headers: { "content-type": "text/plain" } });
+  res.clone = () => {
+    throw new Error("no clone for you");
+  };
+  const { g } = makeEnv(async () => res);
+  expect(await (await g.fetch("x")).text()).toBe("ok");
+  await flush();
+  process.off("unhandledRejection", onUnhandled);
+  expect(unhandled).toEqual([]);
+});
+
+test("xhr: abort() reports canceled, not a generic network error", () => {
+  // Disconfirming: drop the abort listener → canceled:false, errorText "network error".
+  const listeners = {};
+  class FakeXHR {
+    open() {}
+    send() {}
+    addEventListener(name, fn) {
+      listeners[name] = fn;
+    }
+    getResponseHeader() {
+      return null;
+    }
+    getAllResponseHeaders() {
+      return "";
+    }
+  }
+  const emitted = [];
+  installNetworkProbe({ emit: (e) => emitted.push(e), now: () => 5, clock: () => 0 }, { XMLHttpRequest: FakeXHR });
+  const x = new FakeXHR();
+  x.open("get", "https://api.test/slow");
+  x.send(null);
+  Object.assign(x, { status: 0, statusText: "" });
+  listeners.abort();
+  listeners.loadend();
+  expect(emitted[1]).toMatchObject({ kind: "net-end", failed: true, canceled: true, errorText: "aborted" });
 });
 
 test("xhr: open/setRequestHeader/send produce a start, loadend produces the end", () => {

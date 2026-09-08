@@ -56,8 +56,8 @@ export function mergeNetworkEnd(event, end) {
   if (end.failed) {
     d.failed = true;
     d.errorText = end.errorText || "failed";
-    d.canceled = false;
-    event.title = "FAILED " + d.url;
+    d.canceled = !!end.canceled;
+    event.title = (d.canceled ? "CANCELED " : "FAILED ") + d.url;
   } else {
     d.status = end.status;
     d.statusText = end.statusText;
@@ -72,7 +72,16 @@ export function mergeNetworkEnd(event, end) {
   return event;
 }
 
+// The probe lives only in the recorded tab, only while this lane records: it
+// is injected into the current document at start, and again into each document
+// the tab navigates to (the relay's hello → injectProbe). It is never a manifest
+// or registered content script — those match by URL, not by tab, and would put
+// patched fetch/console into every page the user has open.
+const PROBE_FILES = ["dist/page-probe.js"];
+
 export function createInjectLane({ session, pushEvent, maybeErrorScreenshot, ensureContentScripts }) {
+  let windowId = null;
+
   async function tell(tabId, action) {
     try {
       return await chrome.tabs.sendMessage(tabId, { action });
@@ -82,27 +91,38 @@ export function createInjectLane({ session, pushEvent, maybeErrorScreenshot, ens
     }
   }
 
+  // injectImmediately: as early as the API allows in a document that is still
+  // loading, so a navigation mid-recording misses as little as possible.
+  function injectProbe(tabId) {
+    return chrome.scripting.executeScript({ target: { tabId }, files: PROBE_FILES, world: "MAIN", injectImmediately: true });
+  }
+
   return {
     name: "inject",
+    injectProbe,
     async start(tabId) {
       try {
+        ({ windowId } = await chrome.tabs.get(tabId));
+        await injectProbe(tabId);
         await tell(tabId, "oj-probe-start");
       } catch (err) {
         pushEvent({ t: Date.now(), kind: KIND.LOG, level: "warning", title: "Console and network capture unavailable on this page", detail: { message: String(err) } });
       }
     },
-    async stop(tabId) {
+    // Before the stop grace window: make the probe flush its buffer while the
+    // background still accepts batches.
+    async quiesce(tabId) {
       try {
         await chrome.tabs.sendMessage(tabId, { action: "oj-probe-stop" });
       } catch {
-        // probe absent or tab gone — nothing to stop
+        // probe absent or tab gone — nothing to flush
       }
     },
+    async stop() {},
     async screenshot(label) {
       try {
-        const tab = await chrome.tabs.get(session.tabId);
-        if (!tab.active) throw new Error("tab not visible");
-        const image = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
+        // captureVisibleTab rejects on its own when the tab isn't the visible one.
+        const image = await chrome.tabs.captureVisibleTab(windowId, { format: "png" });
         pushEvent({ t: Date.now(), kind: KIND.SCREENSHOT, title: label, detail: { image } });
       } catch (err) {
         pushEvent({ t: Date.now(), kind: KIND.SCREENSHOT, title: label + " (failed)", detail: { error: String(err) } });

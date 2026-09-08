@@ -70,6 +70,10 @@ export function createCdpLane({ session, pushEvent, maybeErrorScreenshot }) {
     try {
       const expression = "(" + collectDeviceInfo.toString() + ")()";
       const result = await sendCmd("Runtime.evaluate", { expression, returnByValue: true });
+      // A page-side throw (fingerprint blockers replacing navigator getters)
+      // resolves, not rejects — surface it as the error it is.
+      if (result.exceptionDetails) throw new Error(result.exceptionDetails.text || "device info threw in page");
+      if (!result.result || typeof result.result.value !== "object") throw new Error("device info returned no object");
       session.device = result.result.value;
     } catch (err) {
       session.device = { error: String(err) };
@@ -230,6 +234,7 @@ export function createCdpLane({ session, pushEvent, maybeErrorScreenshot }) {
       await sendCmd("Log.enable", {});
       await sendCmd("Page.enable", {});
     },
+    async quiesce() {},
     async stop(tabId) {
       try {
         await chrome.debugger.detach({ tabId });

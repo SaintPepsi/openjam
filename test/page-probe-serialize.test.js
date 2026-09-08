@@ -17,6 +17,14 @@ test("cycles, depth and size are bounded", () => {
   const out = serializeArgs([big]);
   expect(out.length).toBe(1001);
   expect(out.endsWith("…")).toBe(true);
+  // A clip that lands between the two halves of an astral character (emoji)
+  // would leave a lone surrogate that turns into U+FFFD in the stored JSON.
+  // Disconfirming: revert clip() to a plain slice(0, 1000).
+  const emoji = "x".repeat(999) + "😀".repeat(10);
+  const clipped = serializeArgs([emoji]);
+  expect(clipped.endsWith("x…")).toBe(true);
+  expect(clipped.length).toBe(1000);
+  expect(clipped.isWellFormed()).toBe(true);
 });
 
 test("errors serialize to their stack, class instances keep their name", () => {

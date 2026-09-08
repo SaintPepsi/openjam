@@ -8,8 +8,11 @@ import { test, expect } from "bun:test";
 const store = {};
 const tabUrlById = {}; // per-test overrides for chrome.tabs.get(id).url
 let attachFailure = null; // per-test: chrome.debugger.attach throws this
+let attachDelayMs = 0; // per-test: how long chrome.debugger.attach takes
 let frameSrcs = []; // per-test: what the foreign-frame scan finds in the page
 let captureVisibleTabCalls = 0;
+let pageGlobals = null; // per-test override of what Runtime.evaluate sees as the page
+const executedScripts = []; // {tabId, files, world}
 let storageSetFailures = 0;
 const createdTabs = [];
 const tabMessages = [];
@@ -19,22 +22,22 @@ const debuggerDetachListeners = [];
 globalThis.chrome = {
   debugger: {
     attach: async () => {
+      if (attachDelayMs) await new Promise((r) => setTimeout(r, attachDelayMs));
       if (attachFailure) throw attachFailure;
     },
     detach: async () => {},
-    sendCommand: async (_target, method) => {
+    sendCommand: async (_target, method, params) => {
       if (method === "Runtime.evaluate") {
-        // returnByValue: the evaluated object comes back as a value, not a string.
-        return {
-          result: {
-            value: {
-              userAgent: "test",
-              url: "https://example.test/app",
-              title: "Test page",
-              viewport: { width: 100, height: 100 },
-            },
-          },
-        };
+        // Really evaluate the expression against stub page globals, like Chrome
+        // would: a throw inside the page comes back as exceptionDetails on a
+        // RESOLVED result, never as a rejection.
+        const g = pageGlobals ?? defaultPageGlobals();
+        try {
+          const value = new Function(...Object.keys(g), "return " + params.expression)(...Object.values(g));
+          return { result: { value } };
+        } catch (err) {
+          return { result: { type: "object", subtype: "error" }, exceptionDetails: { text: "Uncaught", exception: { description: String(err) } } };
+        }
       }
       if (method === "Page.captureScreenshot") return { data: "QUJD" };
       return {};
@@ -79,10 +82,14 @@ globalThis.chrome = {
     },
   },
   scripting: {
-    executeScript: async (opts) => (opts.func ? [{ result: frameSrcs }] : undefined),
+    executeScript: async (opts) => {
+      if (opts.func) return [{ result: frameSrcs }];
+      executedScripts.push({ tabId: opts.target.tabId, files: opts.files, world: opts.world ?? "ISOLATED" });
+    },
   },
   runtime: {
     id: "own",
+    getPlatformInfo: (cb) => cb({ os: "test" }),
     getManifest: () => ({ version: "0.2.0" }),
     getURL: (p) => "chrome-extension://test/" + p,
     onMessage: {
@@ -92,6 +99,17 @@ globalThis.chrome = {
     },
   },
 };
+
+function defaultPageGlobals() {
+  return {
+    navigator: { userAgent: "test", platform: "t", language: "en", languages: ["en"], vendor: "", cookieEnabled: true, onLine: true },
+    location: { href: "https://example.test/app" },
+    document: { referrer: "", title: "Test page" },
+    window: { innerWidth: 100, innerHeight: 100, devicePixelRatio: 1 },
+    screen: { width: 100, height: 100, colorDepth: 24 },
+    performance: {},
+  };
+}
 
 function dispatch(msg, sender = {}) {
   return new Promise((resolve) => {
@@ -232,8 +250,17 @@ test("a foreign extension's iframe switches the session to the inject lane inste
   // the lane armed the probe, asked the page for device info, and screenshotted via captureVisibleTab
   expect(tabMessages.map((m) => m.msg.action)).toEqual(expect.arrayContaining(["oj-probe-start", "oj-device-info", "oj-rrweb-start"]));
   expect(captureVisibleTabCalls).toBe(1);
-  // a reloaded page asks hello → resume both recorder and probe
+  // The probe is not a manifest content script: this lane puts it into THIS tab
+  // now, and again into each document the tab navigates to (hello).
+  // Disconfirming: drop the injectProbe call in inject.start or in the hello handler.
+  const probeInjections = () => executedScripts.filter((e) => e.files?.[0] === "dist/page-probe.js");
+  expect(probeInjections()).toEqual([{ tabId: 7, files: ["dist/page-probe.js"], world: "MAIN" }]);
+  // a reloaded page asks hello → resume the recorder, and put a fresh probe in
   expect(await dispatch({ type: "oj-rrweb-hello" }, { tab: { id: 7 } })).toEqual({ record: true, probe: true });
+  expect(probeInjections()).toHaveLength(2);
+  // …but a hello from any other tab gets neither
+  expect(await dispatch({ type: "oj-rrweb-hello" }, { tab: { id: 8 } })).toEqual({ record: false, probe: false });
+  expect(probeInjections()).toHaveLength(2);
 
   // probe records from the recorded tab land on the timeline with the CDP schema
   const now = Date.now(); // report events sort by t; the warning was pushed at start
@@ -247,7 +274,13 @@ test("a foreign extension's iframe switches the session to the inject lane inste
   // …but not from another tab
   expect(await dispatch({ type: "oj-page-batch", eventsJson: "[]" }, { tab: { id: 8 } })).toEqual({ stop: true });
 
+  tabMessages.length = 0;
   await dispatch({ action: "stop" });
+  // The probe must flush BEFORE the recorder's grace window, while batches are
+  // still accepted: oj-probe-stop precedes oj-rrweb-stop's 400 ms wait. Disconfirming:
+  // move quiesce() after the wait in stopRecording → order flips or batches are refused.
+  const actions = tabMessages.map((m) => m.msg.action);
+  expect(actions.indexOf("oj-probe-stop")).toBeGreaterThan(actions.indexOf("oj-rrweb-stop"));
   const report = store[storedReports()[0]];
   expect(report.meta.capture).toBe("inject");
   expect(report.device.userAgent).toBe("probe-ua");
@@ -309,4 +342,43 @@ test("refuses non-recordable tabs with actionable advice, not a raw CDP error", 
   expect(res.error).not.toMatch(/debugger|chrome-extension/);
   expect((await dispatch({ action: "getStatus" })).recording).toBe(false);
   delete tabUrlById[7];
+});
+
+test("stop during the attach window records the missed screenshot instead of wedging the session", async () => {
+  // Stop arrives while chrome.debugger.attach is still pending: no lane yet.
+  // Before the fix captureScreenshot threw on session.lane.screenshot, the
+  // rejection escaped stopRecording, and every later start answered "Already
+  // recording." Disconfirming: revert captureScreenshot to `session.lane.screenshot(label)`.
+  attachDelayMs = 50;
+  const starting = dispatch({ action: "start", tabId: 7 });
+  await new Promise((r) => setTimeout(r, 5));
+  expect((await dispatch({ action: "getStatus" })).recording).toBe(true);
+  const stopped = await dispatch({ action: "stop" });
+  const started = await starting;
+  attachDelayMs = 0;
+  expect(stopped.ok).toBe(true);
+  expect(started).toEqual({ ok: false, error: "Recording was stopped before it started." });
+  const report = store[storedReports().at(-1)];
+  expect(report.events.find((e) => e.kind === "screenshot")).toMatchObject({ title: "Recording stopped (failed)", detail: { error: "no capture lane active" } });
+  // and the session is usable again
+  expect((await dispatch({ action: "getStatus" })).recording).toBe(false);
+  expect((await dispatch({ action: "start", tabId: 7 })).ok).toBe(true);
+  await dispatch({ action: "stop" });
+});
+
+test("a page that throws inside the device probe yields device.error, not a crash or a bogus object", async () => {
+  // Fingerprint blockers replace navigator getters with throwing ones. CDP
+  // reports that as exceptionDetails on a resolved Runtime.evaluate result.
+  // Disconfirming: remove the exceptionDetails check in cdp.captureDeviceInfo →
+  // device becomes undefined and the assertion below fails.
+  pageGlobals = { ...defaultPageGlobals(), navigator: { get userAgent() { throw new Error("blocked"); } } };
+  expect((await dispatch({ action: "start", tabId: 7 })).ok).toBe(true);
+  await dispatch({ action: "stop" });
+  pageGlobals = null;
+  const report = store[storedReports().at(-1)];
+  expect(report.device).toEqual({ error: expect.stringMatching(/Uncaught|blocked/) });
+  // and the happy path really evaluates collectDeviceInfo's source in the page
+  expect((await dispatch({ action: "start", tabId: 7 })).ok).toBe(true);
+  await dispatch({ action: "stop" });
+  expect(store[storedReports().at(-1)].device).toMatchObject({ userAgent: "test", title: "Test page", screen: { colorDepth: 24 } });
 });

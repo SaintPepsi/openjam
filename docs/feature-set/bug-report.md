@@ -18,6 +18,9 @@ sharing: it only leaves your machine if *you* send the file. See
 
 - Everything is inlined, so the file size scales with session length and captured data.
 - The report is built locally by `report-builder.js` and rendered by `viewer.js` / `renderer.js`.
+- `meta.capture` says how the session was recorded: `cdp` (Chrome debugger) or `inject`
+  (reduced mode, see [Data capture](data-capture.md#when-chromes-debugger-is-unavailable-reduced-mode)).
+  The viewer header shows a `Capture` item only for reduced-mode reports.
 
 ## Test data
 

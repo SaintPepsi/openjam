@@ -22,6 +22,14 @@ globalThis.window = {
     posted.push(msg);
   },
 };
+const documentEvents = {};
+globalThis.document = {
+  referrer: "",
+  title: "T",
+  addEventListener(name, fn) {
+    documentEvents[name] = fn;
+  },
+};
 globalThis.chrome = {
   runtime: {
     get lastError() {
@@ -141,7 +149,6 @@ test("oj-probe-stop disarms; oj-device-info answers with the shared collector's 
   expect(toRecorder().slice(before)).toContain("probe-stop");
   globalThis.navigator = { userAgent: "ua", platform: "p", language: "en", languages: ["en"], vendor: "", cookieEnabled: true, onLine: true };
   globalThis.location = { href: "https://page.test/" };
-  globalThis.document = { referrer: "", title: "T" };
   globalThis.screen = { width: 1, height: 1, colorDepth: 24 };
   globalThis.window.innerWidth = 2;
   globalThis.window.innerHeight = 3;
@@ -149,4 +156,16 @@ test("oj-probe-stop disarms; oj-device-info answers with the shared collector's 
   globalThis.performance = {};
   const info = fromBackground("oj-device-info");
   expect(info).toMatchObject({ userAgent: "ua", url: "https://page.test/", title: "T", viewport: { width: 2, height: 3 }, memory: null });
+});
+
+test("the probe's synchronous pagehide flush (DOM event) reaches the background like a normal batch", () => {
+  // postMessage tasks die with the unloading document; the probe dispatches a
+  // DOM event instead, which is delivered synchronously across worlds.
+  // Disconfirming: remove the oj-probe-flush listener in the relay → nothing sent.
+  const before = sent.length;
+  documentEvents["oj-probe-flush"]({ detail: '[{"kind":"console"}]' });
+  expect(sent.slice(before)).toEqual([{ type: "oj-page-batch", eventsJson: '[{"kind":"console"}]' }]);
+  // an object detail (which would be null across worlds anyway) is ignored
+  documentEvents["oj-probe-flush"]({ detail: { nope: 1 } });
+  expect(sent.length).toBe(before + 1);
 });

@@ -35,10 +35,14 @@ records anyway from the content scripts it already injects, marks the report
 | Other loads (img, script, css, navigations) | ✓ | ✗ |
 | Console, uncaught errors, unhandled rejections | ✓ | ✓ |
 | Browser log (`Log.entryAdded`) | ✓ | ✗ |
+| Frames | all | top frame only (console/fetch inside iframes are not seen) |
+| First requests right after a navigation | ✓ | may be missed (the probe is put into the new document a few ms after it starts) |
 | Screenshots | any tab | active tab only, viewport |
 | Environment, session replay, narration | ✓ | ✓ |
 
-The viewer's header shows `Capture reduced (no debugger)` on such a report.
+The viewer's header shows `Capture reduced (no debugger)` on such a report. The page
+probe that makes reduced mode work is put into the recorded tab only, and only for the
+duration of the recording; every other page keeps its native `fetch` and `console`.
 
 ## What to expect / limitations
 

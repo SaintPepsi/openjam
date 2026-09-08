@@ -6,7 +6,12 @@ const MAX_ARG_CHARS = 1000;
 const MAX_DEPTH = 3;
 
 function clip(s) {
-  return s.length > MAX_ARG_CHARS ? s.slice(0, MAX_ARG_CHARS) + "…" : s;
+  if (s.length <= MAX_ARG_CHARS) return s;
+  let cut = s.slice(0, MAX_ARG_CHARS);
+  // Don't split a surrogate pair: drop a dangling lead surrogate at the boundary.
+  const last = cut.charCodeAt(cut.length - 1);
+  if (last >= 0xd800 && last <= 0xdbff) cut = cut.slice(0, -1);
+  return cut + "…";
 }
 
 function serializeOne(value, depth, seen) {

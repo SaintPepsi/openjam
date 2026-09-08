@@ -38,8 +38,36 @@ function pushEvent(event) {
 }
 
 
+// Null-safe: a stop or manual screenshot can land while startRecording is still
+// attaching (no lane yet). Record the miss instead of throwing past the
+// stopping/finalize bookkeeping, which used to wedge the session.
 function captureScreenshot(label) {
+  if (!session.lane) {
+    pushEvent({ t: Date.now(), kind: KIND.SCREENSHOT, title: label + " (failed)", detail: { error: "no capture lane active" } });
+    return Promise.resolve();
+  }
   return session.lane.screenshot(label);
+}
+
+// MV3 evicts an idle worker after ~30 s. On the cdp lane the debugger session
+// pins it; on the inject lane nothing does, and rrweb/probe batches only flow
+// while the page changes. Any extension API call resets the idle timer, so tick
+// one while recording (lane-agnostic: harmless on cdp).
+const KEEP_ALIVE_MS = 20_000;
+let keepAliveTimer = null;
+function startKeepAlive() {
+  stopKeepAlive();
+  keepAliveTimer = setInterval(() => {
+    try {
+      chrome.runtime.getPlatformInfo(() => {});
+    } catch {
+      // worker shutting down — nothing to keep alive
+    }
+  }, KEEP_ALIVE_MS);
+}
+function stopKeepAlive() {
+  if (keepAliveTimer) clearInterval(keepAliveTimer);
+  keepAliveTimer = null;
 }
 
 function maybeErrorScreenshot() {
@@ -53,11 +81,12 @@ const cdpLane = createCdpLane({ session, pushEvent, maybeErrorScreenshot });
 const injectLane = createInjectLane({ session, pushEvent, maybeErrorScreenshot, ensureContentScripts });
 
 // Content scripts can be absent (extension reloaded after the page loaded, or a
-// page the manifest match didn't reach). Inject all three halves: the rrweb
-// recorder and the page probe into the MAIN world (they patch the page's own
-// prototypes), the relay into the isolated world (for chrome.*).
+// page the manifest match didn't reach). Inject both halves: the rrweb recorder
+// into the MAIN world (it patches the page's own stylesheet prototypes), the
+// relay into the isolated world (for chrome.*). The page probe is NOT here: the
+// inject lane adds it only to the tab it records (src/lanes/inject.js).
 async function ensureContentScripts(tabId) {
-  await chrome.scripting.executeScript({ target: { tabId }, files: ["dist/rrweb-recorder.js", "dist/page-probe.js"], world: "MAIN" });
+  await chrome.scripting.executeScript({ target: { tabId }, files: ["dist/rrweb-recorder.js"], world: "MAIN" });
   await chrome.scripting.executeScript({ target: { tabId }, files: ["dist/rrweb-relay.js"] });
 }
 
@@ -159,7 +188,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     // A page (re)loaded; tell its recorder (and, on the inject lane, its probe)
     // to resume if we're mid-recording.
     const ours = session.recording && sender.tab && sender.tab.id === session.tabId;
-    sendResponse({ record: ours, probe: ours && session.capture === "inject" });
+    const probe = ours && session.capture === "inject";
+    // The new document has no probe yet (it is never a manifest script): put one
+    // in. The relay arms it when the probe announces probe-ready.
+    if (probe) session.lane.injectProbe(sender.tab.id).catch(() => {});
+    sendResponse({ record: ours, probe });
     return;
   }
 });
@@ -203,7 +236,7 @@ async function scanForeignFrames(tabId) {
   }
 }
 
-export function reducedCaptureWarning(blockedBy) {
+function reducedCaptureWarning(blockedBy) {
   const who = blockedBy.length ? "extension " + blockedBy.join(", ") : "another extension";
   return (
     "Recording in reduced mode: " + who + " has content in this page and Chrome blocks its debugger. " +
@@ -245,8 +278,15 @@ async function startRecording(tabId) {
     lane = injectLane;
     blockedBy = await scanForeignFrames(tabId);
   }
+  if (!session.recording || session.stopping) {
+    // A stop (or tab close) landed while we were attaching; that path has
+    // already finalized the session. Don't start a lane on top of it.
+    if (lane === cdpLane) await cdpLane.stop(tabId);
+    return { ok: false, error: "Recording was stopped before it started." };
+  }
   session.capture = lane.name;
   session.lane = lane;
+  startKeepAlive();
   const warning = blockedBy ? reducedCaptureWarning(blockedBy) : null;
   if (warning) pushEvent({ t: Date.now(), kind: KIND.LOG, level: "warning", title: warning, detail: { message: warning, blockedBy } });
   await session.lane.start(tabId);
@@ -269,13 +309,16 @@ async function stopRecording() {
   } catch {
     // recorder absent on this page — already logged at start
   }
+  // The lane's page-side producer (the probe) must flush BEFORE the grace
+  // window too, or its last batch arrives after recording=false and is refused.
+  if (session.lane) await session.lane.quiesce(tabId);
 
   // Give in-flight body fetches and the recorder's final batch a moment to land.
   // recording stays true until after the wait so the final rrweb batch is accepted.
   await new Promise((resolve) => setTimeout(resolve, 400));
   session.recording = false;
 
-  await session.lane.stop(tabId);
+  if (session.lane) await session.lane.stop(tabId);
 
   const audio = await stopAudioRecorder();
   return finalizeRecording({ audio });
@@ -295,10 +338,12 @@ async function salvageRecording(note) {
   } catch {
     // recorder absent or tab already gone — nothing left to stop.
   }
+  if (session.lane) await session.lane.quiesce(session.tabId);
   // Keep recording=true across the grace window so the recorder's final batch is
   // still accepted, then close the session and persist what we have.
   await new Promise((resolve) => setTimeout(resolve, 400));
   session.recording = false;
+  if (session.lane) await session.lane.stop(session.tabId);
   const audio = await stopAudioRecorder();
   await finalizeRecording({ note, audio });
 }
@@ -337,6 +382,7 @@ async function finalizeRecording({ note, audio } = {}) {
     await saveReport(key, report);
   } finally {
     session.stopping = false;
+    stopKeepAlive();
   }
   await chrome.tabs.create({ url: chrome.runtime.getURL("viewer.html?key=" + encodeURIComponent(key)) });
   return { ok: true, eventCount: report.events.length };

@@ -44,7 +44,9 @@ function absolute(url) {
 
 const mimeOf = (contentType) => String(contentType || "").split(";")[0].trim();
 
-export function installNetworkProbe({ emit, now = () => Date.now(), clock = () => performance.now() }, g = globalThis) {
+// isArmed gates the only expensive step — reading a cloned body — so a page
+// that is not being recorded pays one function call per fetch, nothing more.
+export function installNetworkProbe({ emit, isArmed = () => true, now = () => Date.now(), clock = () => performance.now() }, g = globalThis) {
   const origFetch = g.fetch;
   if (typeof origFetch === "function") {
     g.fetch = function (input, init) {
@@ -82,7 +84,7 @@ export function installNetworkProbe({ emit, now = () => Date.now(), clock = () =
             encodedBytes: Number(res.headers.get("content-length")) || null,
             failed: false,
           };
-          if (!classifyBody(end.mimeType, end.encodedBytes)) return emit(end);
+          if (!isArmed() || !classifyBody(end.mimeType, end.encodedBytes)) return emit(end);
           res
             .clone()
             .text()
@@ -96,7 +98,10 @@ export function installNetworkProbe({ emit, now = () => Date.now(), clock = () =
             );
         },
         (err) => emit({ kind: "net-end", requestId, t: now(), durationMs: Math.round(clock() - t0), failed: true, errorText: String(err) }),
-      );
+      ).catch(() => {
+        // bookkeeping threw (exotic Response from another wrapper) — never
+        // surface that to the page as an unhandled rejection
+      });
       return p;
     };
   }
@@ -117,6 +122,8 @@ export function installNetworkProbe({ emit, now = () => Date.now(), clock = () =
       if (meta) {
         const requestId = "x" + ++seq;
         const t0 = clock();
+        let aborted = false;
+        this.addEventListener("abort", () => (aborted = true));
         emit({
           kind: "net-start",
           requestId,
@@ -141,7 +148,8 @@ export function installNetworkProbe({ emit, now = () => Date.now(), clock = () =
             durationMs: Math.round(clock() - t0),
             encodedBytes: null,
             failed,
-            errorText: failed ? "network error" : undefined,
+            canceled: aborted,
+            errorText: failed ? (aborted ? "aborted" : "network error") : undefined,
           };
           const textual = this.responseType === "" || this.responseType === "text";
           if (!failed && textual && classifyBody(mimeType, 0)) {

@@ -7,6 +7,7 @@ const TEXTY = /json|text|javascript|xml|html|csv|x-www-form-urlencoded/i;
 // enough. `length` is the declared or measured byte count, 0/null when unknown.
 export function classifyBody(mimeType, length) {
   if (!TEXTY.test(mimeType || "")) return false;
+  if (/event-stream/i.test(mimeType)) return false; // never-ending: reading it would buffer forever
   if (length && length > BODY_CAPTURE_MAX_BYTES) return false;
   return true;
 }
