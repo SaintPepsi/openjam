@@ -517,6 +517,10 @@ export function renderReport(container, report) {
   metaItem("Captured", meta.capturedAt ? new Date(meta.capturedAt).toLocaleString() : "—");
   metaItem("Duration", ((meta.durationMs || 0) / 1000).toFixed(1) + "s");
   metaItem("Events", String(meta.eventCount != null ? meta.eventCount : events.length));
+  // meta.capture is the one signal for which lane recorded this: "inject" means
+  // chrome.debugger was blocked (another extension's frame), so fetch/XHR-only
+  // network and viewport screenshots. Say so where the reader looks first.
+  if (meta.capture === "inject") metaItem("Capture", "reduced (no debugger)");
   header.appendChild(metaRow);
   container.appendChild(header);
 

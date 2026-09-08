@@ -4,6 +4,8 @@
 
 import { KIND } from "./event-kinds.js";
 import { createCdpLane } from "./src/lanes/cdp.js";
+import { createInjectLane } from "./src/lanes/inject.js";
+import { foreignExtensionIds, listExtensionFrameSrcs } from "./src/foreign-frames.js";
 
 const SCREENSHOT_ON_ERROR_COOLDOWN_MS = 2000;
 
@@ -48,6 +50,16 @@ function maybeErrorScreenshot() {
 }
 
 const cdpLane = createCdpLane({ session, pushEvent, maybeErrorScreenshot });
+const injectLane = createInjectLane({ session, pushEvent, maybeErrorScreenshot, ensureContentScripts });
+
+// Content scripts can be absent (extension reloaded after the page loaded, or a
+// page the manifest match didn't reach). Inject all three halves: the rrweb
+// recorder and the page probe into the MAIN world (they patch the page's own
+// prototypes), the relay into the isolated world (for chrome.*).
+async function ensureContentScripts(tabId) {
+  await chrome.scripting.executeScript({ target: { tabId }, files: ["dist/rrweb-recorder.js", "dist/page-probe.js"], world: "MAIN" });
+  await chrome.scripting.executeScript({ target: { tabId }, files: ["dist/rrweb-relay.js"] });
+}
 
 // ---- rrweb replay recorder ------------------------------------------------
 
@@ -56,12 +68,9 @@ async function startReplayRecorder(tabId) {
     await chrome.tabs.sendMessage(tabId, { action: "oj-rrweb-start" });
   } catch {
     // Content scripts absent (e.g. extension was reloaded after the page
-    // loaded, or a restricted page). Inject both halves and retry once: the
-    // rrweb recorder into the MAIN world (so its CSS observers patch the page's
-    // own stylesheet APIs) and the relay into the isolated world (for chrome.*).
+    // loaded, or a restricted page). Inject them and retry once.
     try {
-      await chrome.scripting.executeScript({ target: { tabId }, files: ["dist/rrweb-recorder.js"], world: "MAIN" });
-      await chrome.scripting.executeScript({ target: { tabId }, files: ["dist/rrweb-relay.js"] });
+      await ensureContentScripts(tabId);
       await chrome.tabs.sendMessage(tabId, { action: "oj-rrweb-start" });
     } catch (err) {
       pushEvent({
@@ -132,9 +141,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sendResponse(accept ? { ok: true } : { stop: true });
     return;
   }
+  if (msg.type === "oj-page-batch") {
+    // Probe records from the inject lane. Only that lane accepts them; on the
+    // cdp lane the probe is never armed, so this is defence in depth.
+    const accept = session.recording && session.capture === "inject" && sender.tab && sender.tab.id === session.tabId;
+    if (accept) {
+      try {
+        session.lane.handleBatch(JSON.parse(msg.eventsJson));
+      } catch (err) {
+        console.warn("OpenJam: dropped an unparseable probe batch", err);
+      }
+    }
+    sendResponse(accept ? { ok: true } : { stop: true });
+    return;
+  }
   if (msg.type === "oj-rrweb-hello") {
-    // A page (re)loaded; tell its recorder to resume if we're mid-recording.
-    sendResponse({ record: session.recording && sender.tab && sender.tab.id === session.tabId });
+    // A page (re)loaded; tell its recorder (and, on the inject lane, its probe)
+    // to resume if we're mid-recording.
+    const ours = session.recording && sender.tab && sender.tab.id === session.tabId;
+    sendResponse({ record: ours, probe: ours && session.capture === "inject" });
     return;
   }
 });
@@ -163,14 +188,28 @@ async function recordableTabError(tabId) {
 // from another extension — a password manager's inline menu, a grammar checker,
 // a shopping assistant — makes the whole tab unattachable, while tabs.get still
 // reports a normal https URL so recordableTabError() lets it through (#48).
-// There is no workaround from our side, so name the cause and the way out.
+// Chrome offers no way around it, so that one case falls back to the inject
+// lane; every other attach failure is unknown territory and still aborts.
 const FOREIGN_EXTENSION_FRAME = /chrome-extension:\/\/ URL of different extension/;
 
-function attachError(err) {
-  if (FOREIGN_EXTENSION_FRAME.test(String(err))) {
-    return "Another extension has added content to this page (usually a password manager or grammar checker), which blocks Chrome from letting OpenJam record it. Disable that extension on this site, reload the page, and try again.";
+// The ids of other extensions with frames in the tab, best effort: frames
+// inside closed shadow roots stay invisible and the list comes back empty.
+async function scanForeignFrames(tabId) {
+  try {
+    const results = await chrome.scripting.executeScript({ target: { tabId, allFrames: true }, func: listExtensionFrameSrcs });
+    return foreignExtensionIds((results || []).flatMap((r) => (r && r.result) || []), chrome.runtime.id);
+  } catch {
+    return [];
   }
-  return "Could not attach debugger: " + String(err);
+}
+
+export function reducedCaptureWarning(blockedBy) {
+  const who = blockedBy.length ? "extension " + blockedBy.join(", ") : "another extension";
+  return (
+    "Recording in reduced mode: " + who + " has content in this page and Chrome blocks its debugger. " +
+    "Replay, console, fetch/XHR calls and screenshots of this tab still work; other requests and full-page screenshots are not captured. " +
+    "Disable that extension on this site for full capture."
+  );
 }
 
 async function startRecording(tabId) {
@@ -194,21 +233,29 @@ async function startRecording(tabId) {
     lane: null,
   });
 
+  let lane = cdpLane;
+  let blockedBy = null;
   try {
     await cdpLane.attach(tabId);
   } catch (err) {
-    session.recording = false;
-    return { ok: false, error: attachError(err) };
+    if (!FOREIGN_EXTENSION_FRAME.test(String(err))) {
+      session.recording = false;
+      return { ok: false, error: "Could not attach debugger: " + String(err) };
+    }
+    lane = injectLane;
+    blockedBy = await scanForeignFrames(tabId);
   }
-  session.capture = cdpLane.name;
-  session.lane = cdpLane;
+  session.capture = lane.name;
+  session.lane = lane;
+  const warning = blockedBy ? reducedCaptureWarning(blockedBy) : null;
+  if (warning) pushEvent({ t: Date.now(), kind: KIND.LOG, level: "warning", title: warning, detail: { message: warning, blockedBy } });
   await session.lane.start(tabId);
 
   await session.lane.deviceInfo(tabId);
   await captureScreenshot("Recording started");
   await startReplayRecorder(tabId);
   await startAudioRecorder();
-  return { ok: true };
+  return warning ? { ok: true, warning, blockedBy } : { ok: true };
 }
 
 async function stopRecording() {

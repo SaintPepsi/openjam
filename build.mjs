@@ -81,6 +81,17 @@ await build({
   logLevel: "info",
 });
 
+// MAIN-world page probe: console/error/fetch/XHR capture for the inject lane
+// (recording without chrome.debugger, issue #48).
+await build({
+  entryPoints: ["src/page-probe.js"],
+  bundle: true,
+  format: "iife",
+  minify: true,
+  outfile: "dist/page-probe.js",
+  logLevel: "info",
+});
+
 // Isolated-world bridge that forwards the MAIN-world recorder's batches to the
 // background worker (the recorder has no chrome.* APIs in the main world).
 await build({

@@ -5,15 +5,17 @@
 // URL (chromium: chrome/browser/extensions/api/debugger/debugger_api.cc,
 // ExtensionMayAttachToRenderFrameHost). One <iframe> from another extension —
 // a password-manager inline menu, a grammar checker, a shopping assistant —
-// makes the whole tab unattachable for us, while chrome.tabs.get still reports
-// a normal https URL, so recordableTabError() waves it through.
+// makes the whole tab unattachable, while chrome.tabs.get still reports a
+// normal https URL. OpenJam now records anyway on the inject lane (page probe +
+// captureVisibleTab), marks the report meta.capture="inject", and names the
+// blocking extension.
 //
-// Disconfirming inputs: remove the foreign iframe before starting → the first
-// `start` succeeds and the `toBe(false)` assertion fails; drop attachError() from
-// background.js → the raw "Cannot access a chrome-extension://" error leaks.
+// Disconfirming inputs: remove the foreign iframe before starting → capture is
+// "cdp" and the warning assertions fail; comment out the probe arming in
+// src/lanes/inject.js start() → the console/network/error assertions fail.
 import { test, expect } from "@playwright/test";
 import path from "node:path";
-import { launchExtension, serveFixture, openPopup, tabIdOf, sendAction, ROOT } from "../test/e2e/harness.mjs";
+import { launchExtension, serveFixture, openPopup, tabIdOf, sendAction, stopAndOpenViewer, ROOT } from "../test/e2e/harness.mjs";
 
 test.describe.configure({ mode: "serial" });
 
@@ -31,35 +33,92 @@ test.afterAll(async () => {
   await fixtureServer?.close();
 });
 
-test("another extension's iframe on a normal page blocks the debugger attach (#48)", async () => {
+async function openFixtureWithForeignFrame() {
   const page = await context.newPage();
   await page.goto(fixtureServer.url, { waitUntil: "load" });
   // The fixture extension's content script has injected its frame and it has
   // committed a chrome-extension:// URL that is not ours.
-  const frame = page.frameLocator("#foreign-ext-frame");
-  await expect(frame.locator("body")).toHaveText("foreign extension frame");
-  const frameOrigin = await page.locator("#foreign-ext-frame").evaluate((f) => new URL(f.src).origin);
-  expect(frameOrigin).toMatch(/^chrome-extension:\/\//);
-  expect(frameOrigin).not.toBe(`chrome-extension://${extensionId}`);
+  await expect(page.frameLocator("#foreign-ext-frame").locator("body")).toHaveText("foreign extension frame");
+  const foreignId = await page.locator("#foreign-ext-frame").evaluate((f) => new URL(f.src).host);
+  expect(foreignId).not.toBe(extensionId);
+  return { page, foreignId };
+}
 
+const latestReport = (popup) =>
+  popup.evaluate(async () => {
+    const all = await chrome.storage.local.get(null);
+    return all[all.lastReportKey];
+  });
+
+test("another extension's iframe: recording runs on the inject lane and names the culprit (#48)", async () => {
+  const { page, foreignId } = await openFixtureWithForeignFrame();
   const popup = await openPopup(context, extensionId);
   const tabId = await tabIdOf(popup, fixtureServer.url);
 
-  // The guard sees an http URL and lets it through; Chrome then rejects the
-  // attach, and the user gets advice naming the cause, not the raw CDP error.
-  const blocked = await sendAction(popup, { action: "start", tabId });
-  expect(blocked.ok).toBe(false);
-  expect(blocked.error).toContain("Another extension has added content to this page");
-  expect(blocked.error).not.toContain("Cannot access a chrome-extension://");
-  expect((await sendAction(popup, { action: "getStatus" })).recording).toBe(false);
-
-  // Same tab, same URL, foreign frame removed: attach succeeds. This pins the
-  // cause on the frame, not on the page or on two extensions being loaded.
-  await page.evaluate(() => document.getElementById("foreign-ext-frame").remove());
+  // captureVisibleTab needs the recorded tab in front.
+  await page.bringToFront();
   const started = await sendAction(popup, { action: "start", tabId });
   expect(started.ok).toBe(true);
-  await sendAction(popup, { action: "stop" });
+  expect(started.blockedBy).toEqual([foreignId]);
+  expect(started.warning).toContain("reduced mode: extension " + foreignId);
+  expect((await sendAction(popup, { action: "getStatus" })).capture).toBe("inject");
 
+  // Drive the fixture's real handlers: console.log, fetch(self), uncaught throw.
+  await page.locator("#inc").click();
+  await page.locator("#fetchBtn").click();
+  await page.locator("#errBtn").click();
+  await page.waitForTimeout(700); // probe flushes every 500ms
+
+  const viewer = await stopAndOpenViewer(context, popup);
+  const report = await latestReport(popup);
+  expect(report.meta.capture).toBe("inject");
+  expect(report.device.userAgent).toContain("Chrome");
+  const byKind = (k) => report.events.filter((e) => e.kind === k);
+  expect(byKind("log")[0].detail.blockedBy).toEqual([foreignId]);
+  expect(byKind("console").some((e) => e.title === "counter is now 1")).toBe(true);
+  const fetched = byKind("network").find((e) => e.detail.url === fixtureServer.url);
+  expect(fetched.detail).toMatchObject({ method: "GET", status: 200, resourceType: "fetch" });
+  expect(fetched.detail.responseBody).toContain("OpenJam E2E Fixture");
+  expect(byKind("error").some((e) => e.title.includes("fixture test error"))).toBe(true);
+  const shots = byKind("screenshot").filter((e) => e.detail.image);
+  expect(shots.length).toBeGreaterThanOrEqual(2); // started + stopped (+ on error)
+  expect(shots[0].detail.image.startsWith("data:image/png;base64,")).toBe(true);
+  expect(shots[0].detail.image.length).toBeGreaterThan(1000);
+
+  // The viewer says so where the reader looks first.
+  await expect(viewer.locator(".meta")).toContainText("reduced (no debugger)");
+
+  await viewer.close();
+  await popup.close();
+  await page.close();
+});
+
+test("popup shows the gold reduced-mode notice with a Manage extension button", async () => {
+  const { page, foreignId } = await openFixtureWithForeignFrame();
+  const popup = await openPopup(context, extensionId);
+  // Drive the REAL toggle: popup.js resolves the active tab (the fixture, kept in
+  // front) and starts; the background answers with the warning + blockedBy.
+  await page.bringToFront();
+  await popup.locator("openjam-popup [data-act=toggle]").dispatchEvent("click");
+  const warn = popup.locator("openjam-popup .warn");
+  await expect(warn).toContainText("reduced mode: extension " + foreignId);
+  await expect(warn.locator("button.act")).toHaveCount(1);
+  await expect(popup.locator("openjam-popup .err")).toBeHidden();
+  await expect(popup.locator("openjam-popup .st-lbl")).toHaveText("REC");
+  await sendAction(popup, { action: "stop" });
+  await popup.close();
+  await page.close();
+});
+
+test("same page without the foreign frame records on the cdp lane, no warning", async () => {
+  const { page } = await openFixtureWithForeignFrame();
+  await page.evaluate(() => document.getElementById("foreign-ext-frame").remove());
+  const popup = await openPopup(context, extensionId);
+  const tabId = await tabIdOf(popup, fixtureServer.url);
+  const started = await sendAction(popup, { action: "start", tabId });
+  expect(started).toEqual({ ok: true });
+  expect((await sendAction(popup, { action: "getStatus" })).capture).toBe("cdp");
+  await sendAction(popup, { action: "stop" });
   await popup.close();
   await page.close();
 });

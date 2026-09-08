@@ -183,6 +183,7 @@ replay iframe is ever created), and `build.mjs` bundles the engine directly inst
 
 ## Known limitations (MVP — see plans/MVP_PLAN.md for the cut list)
 
+- When another extension has an iframe in the page (password managers, grammar checkers), Chrome refuses the debugger for the whole tab. OpenJam records in reduced mode instead: console, errors, fetch/XHR and viewport screenshots, no other network loads. The popup names the extension; see `docs/feature-set/data-capture.md`.
 - Console/network history before **Start** is not captured — recording is forward-only.
 - Response bodies are captured only for text-like types under 100 KB (configurable via `BODY_CAPTURE_MAX_BYTES` in `background.js`).
 - Replay events are held in memory uncompressed — keep captures short (minutes, not hours). The manifest requests [`unlimitedStorage`](https://developer.chrome.com/docs/extensions/reference/api/storage#storage_areas), so the ~10 MB `chrome.storage.local` quota doesn't apply; if a save still fails (disk pressure), the report degrades in layers: replay dropped (noted on the timeline), then screenshot pixels.

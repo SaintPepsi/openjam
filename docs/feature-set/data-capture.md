@@ -19,6 +19,27 @@ records, per [README → How it works](../../README.md#how-it-works):
 Every event is normalised to a wall-clock timestamp so the report renders one ordered,
 filterable timeline alongside the [session replay](session-replay.md).
 
+## When Chrome's debugger is unavailable (reduced mode)
+
+`chrome.debugger.attach` vets every frame in the tab, not just the page URL. One iframe
+owned by another extension (password-manager inline menus, grammar checkers, shopping
+assistants) makes the whole tab unattachable — Chrome's rule that one extension may never
+inspect another ([#48](https://github.com/SaintPepsi/openjam/issues/48)). OpenJam then
+records anyway from the content scripts it already injects, marks the report
+`meta.capture: "inject"`, and tells you which extension is in the way with a
+**Manage extension** button.
+
+| Signal | Full (`cdp`) | Reduced (`inject`) |
+|---|---|---|
+| fetch/XHR: method, URL, status, headers, texty bodies < 100 KB | ✓ | ✓ (headers limited to what the page can see) |
+| Other loads (img, script, css, navigations) | ✓ | ✗ |
+| Console, uncaught errors, unhandled rejections | ✓ | ✓ |
+| Browser log (`Log.entryAdded`) | ✓ | ✗ |
+| Screenshots | any tab | active tab only, viewport |
+| Environment, session replay, narration | ✓ | ✓ |
+
+The viewer's header shows `Capture reduced (no debugger)` on such a report.
+
 ## What to expect / limitations
 
 - Network response bodies are captured for text content under ~100 KB; larger or binary
@@ -28,6 +49,11 @@ filterable timeline alongside the [session replay](session-replay.md).
 
 ## Test data
 
+- Reduced mode end to end, next to a fixture extension that injects its own iframe:
+  `e2e/foreign-extension-frame.spec.mjs` with `test/e2e/foreign-extension/`
+- Page probe (console/error/fetch/XHR in the MAIN world): `test/page-probe.test.js`,
+  `test/page-probe-network.test.js`, `test/page-probe-serialize.test.js`
+- Lane selection and the reduced-mode report: `test/background.test.js`
 - Event normalisation/kinds: `test/event-kinds.test.js`
 - Synthetic-but-realistic capture with a planted `400` buried in ordinary traffic:
   `eval/fixture-report.mjs`

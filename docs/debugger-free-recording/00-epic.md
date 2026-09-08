@@ -1,7 +1,7 @@
 # Record without the debugger — epic
 
 **Issue:** [#48](https://github.com/SaintPepsi/openjam/issues/48)
-**Branch:** `bugfix/issue-48-foreign-extension-frame` (stopgap landed: named error, repro fixture)
+**Branch:** `bugfix/issue-48-foreign-extension-frame` — built in one pass (0.7.0); this doc is the design record
 **Type:** bug turned capability gap
 
 ## Problem
@@ -64,15 +64,15 @@ which extension is in the way and what they lose.
 
 | Doc | Ticket | Status |
 | --- | --- | --- |
-| [01-name-the-culprit.md](01-name-the-culprit.md) | Error carries the blocking extension IDs; popup offers a one-click path to disable | planned |
-| [02-capture-lane-signal.md](02-capture-lane-signal.md) | `session.capture` + `report.meta.capture`, CDP code moved behind a lane module | planned |
-| [03-page-console-lane.md](03-page-console-lane.md) | Console, errors, rejections from the MAIN world via the relay | planned |
-| [04-page-network-lane.md](04-page-network-lane.md) | fetch/XHR via MAIN-world patches, same NETWORK schema | planned |
-| [05-screenshots-and-device-without-cdp.md](05-screenshots-and-device-without-cdp.md) | `captureVisibleTab` screenshots, shared device-info collector | planned |
-| [06-fallback-wiring.md](06-fallback-wiring.md) | Attach fails on a foreign frame → inject lane, warning with culprit, e2e proof | planned |
-| [07-docs-and-release.md](07-docs-and-release.md) | feature-set docs, viewer badge, issue reply, 0.7.0 | planned |
+| [01-name-the-culprit.md](01-name-the-culprit.md) | Error carries the blocking extension IDs; popup offers a one-click path to disable | done |
+| [02-capture-lane-signal.md](02-capture-lane-signal.md) | `session.capture` + `report.meta.capture`, CDP code moved behind a lane module | done |
+| [03-page-console-lane.md](03-page-console-lane.md) | Console, errors, rejections from the MAIN world via the relay | done |
+| [04-page-network-lane.md](04-page-network-lane.md) | fetch/XHR via MAIN-world patches, same NETWORK schema | done |
+| [05-screenshots-and-device-without-cdp.md](05-screenshots-and-device-without-cdp.md) | `captureVisibleTab` screenshots, shared device-info collector | done |
+| [06-fallback-wiring.md](06-fallback-wiring.md) | Attach fails on a foreign frame → inject lane, warning with culprit, e2e proof | done |
+| [07-docs-and-release.md](07-docs-and-release.md) | feature-set docs, viewer badge, issue reply, 0.7.0 | done |
 
-01 ships first on its own (this branch, 0.6.3). 02–07 are the epic proper; 02 must land
+Commit order followed 02 → 03/04/05 → 01/06 → 07 in one branch. 02 landed
 before 03–06 because it defines the signal they all read.
 
 ## Out of scope

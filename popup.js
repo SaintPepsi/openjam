@@ -28,6 +28,17 @@ function showFailure(error) {
   oj.showWarning(piiText);
 }
 
+// Reduced-mode start (another extension blocks the debugger, #48): gold
+// notice with one "Manage extension" button per blocking id. Pages can't link
+// to chrome://extensions, but an extension may open it with tabs.create.
+function showReduced({ warning, blockedBy }) {
+  const actions = (blockedBy || []).map((id) => ({ label: "Manage extension " + id.slice(0, 8) + "…", id }));
+  oj.showWarning(warning, { actions });
+}
+oj.addEventListener("oj-action", (e) => {
+  chrome.tabs.create({ url: "chrome://extensions/?id=" + encodeURIComponent(e.detail.id) });
+});
+
 /* ---------------- record / stop ---------------- */
 oj.addEventListener("oj-toggle", async () => {
   oj.clearNotices();
@@ -39,6 +50,7 @@ oj.addEventListener("oj-toggle", async () => {
   } else {
     const res = await send("start", { tabId: await activeTabId() });
     if (!res.ok) showFailure(res.error);
+    else if (res.warning) showReduced(res);
   }
   await refresh();
 });

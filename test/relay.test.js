@@ -108,3 +108,45 @@ test("ignores a recorder ready announcement when not recording", () => {
   fromRecorder("ready");
   expect(toRecorder().slice(before)).not.toContain("start");
 });
+
+// ---- page probe (inject lane) -------------------------------------------
+
+test("arms the probe on oj-probe-start and re-arms a probe that announces readiness later", () => {
+  const before = toRecorder().length;
+  expect(fromBackground("oj-probe-start")).toEqual({ ok: true });
+  fromRecorder("probe-ready");
+  expect(toRecorder().slice(before)).toEqual(["probe-start", "probe-start"]);
+});
+
+test("forwards probe batches verbatim as oj-page-batch and stops the probe on {stop:true}", () => {
+  const eventsJson = JSON.stringify([{ kind: "console", level: "log", t: 1, message: "x" }]);
+  const before = sent.length;
+  fromRecorder("probe-batch", { eventsJson });
+  const fwd = sent.slice(before).find((m) => m.type === "oj-page-batch");
+  expect(fwd.eventsJson).toBe(eventsJson);
+  // background says stop → relay disarms the probe
+  const origSend = chrome.runtime.sendMessage;
+  chrome.runtime.sendMessage = (msg, cb) => (msg.type === "oj-page-batch" ? cb({ stop: true }) : origSend(msg, cb));
+  const b2 = toRecorder().length;
+  fromRecorder("probe-batch", { eventsJson });
+  chrome.runtime.sendMessage = origSend;
+  expect(toRecorder().slice(b2)).toContain("probe-stop");
+  fromRecorder("probe-ready");
+  expect(toRecorder().slice(b2)).not.toContain("probe-start"); // disarmed: readiness no longer re-arms
+});
+
+test("oj-probe-stop disarms; oj-device-info answers with the shared collector's shape", () => {
+  const before = toRecorder().length;
+  expect(fromBackground("oj-probe-stop")).toEqual({ ok: true });
+  expect(toRecorder().slice(before)).toContain("probe-stop");
+  globalThis.navigator = { userAgent: "ua", platform: "p", language: "en", languages: ["en"], vendor: "", cookieEnabled: true, onLine: true };
+  globalThis.location = { href: "https://page.test/" };
+  globalThis.document = { referrer: "", title: "T" };
+  globalThis.screen = { width: 1, height: 1, colorDepth: 24 };
+  globalThis.window.innerWidth = 2;
+  globalThis.window.innerHeight = 3;
+  globalThis.window.devicePixelRatio = 1;
+  globalThis.performance = {};
+  const info = fromBackground("oj-device-info");
+  expect(info).toMatchObject({ userAgent: "ua", url: "https://page.test/", title: "T", viewport: { width: 2, height: 3 }, memory: null });
+});

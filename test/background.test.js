@@ -8,6 +8,8 @@ import { test, expect } from "bun:test";
 const store = {};
 const tabUrlById = {}; // per-test overrides for chrome.tabs.get(id).url
 let attachFailure = null; // per-test: chrome.debugger.attach throws this
+let frameSrcs = []; // per-test: what the foreign-frame scan finds in the page
+let captureVisibleTabCalls = 0;
 let storageSetFailures = 0;
 const createdTabs = [];
 const tabMessages = [];
@@ -46,10 +48,15 @@ globalThis.chrome = {
   },
   tabs: {
     query: async () => [{ id: 1 }],
-    get: async (id) => ({ id, url: tabUrlById[id] ?? "https://example.test/app" }),
+    get: async (id) => ({ id, url: tabUrlById[id] ?? "https://example.test/app", active: true, windowId: 1 }),
     sendMessage: async (tabId, msg) => {
       tabMessages.push({ tabId, msg });
+      if (msg.action === "oj-device-info") return { userAgent: "probe-ua", url: "https://example.test/app", title: "Test page" };
       return { ok: true };
+    },
+    captureVisibleTab: async () => {
+      captureVisibleTabCalls++;
+      return "data:image/png;base64,AA==";
     },
     create: async (opts) => {
       createdTabs.push(opts.url);
@@ -71,8 +78,11 @@ globalThis.chrome = {
       },
     },
   },
-  scripting: { executeScript: async () => {} },
+  scripting: {
+    executeScript: async (opts) => (opts.func ? [{ result: frameSrcs }] : undefined),
+  },
   runtime: {
+    id: "own",
     getManifest: () => ({ version: "0.2.0" }),
     getURL: (p) => "chrome-extension://test/" + p,
     onMessage: {
@@ -205,20 +215,64 @@ test("concurrent stop clicks produce one report and one viewer tab", async () =>
   expect(createdTabs.length).toBe(1);
 });
 
-test("a foreign extension's iframe on a normal page gets named advice, not the raw CDP error (#48)", async () => {
+test("a foreign extension's iframe switches the session to the inject lane instead of failing (#48)", async () => {
   // The tab URL is a plain https page, so the pre-attach guard passes; Chrome
   // then rejects the attach because another extension owns one of its frames.
-  // Disconfirming input: change the thrown message to any other CDP error and
-  // the /Another extension/ assertion fails (falls through to the generic path).
+  // Disconfirming inputs: (a) change the thrown message to any other CDP error →
+  // ok:false and no lane; (b) drop the probe-batch handler → no console event.
   attachFailure = new Error("Cannot access a chrome-extension:// URL of different extension");
-  const res = await dispatch({ action: "start", tabId: 7 });
+  frameSrcs = ["chrome-extension://aaaa/menu.html", "chrome-extension://own/x.html"];
+  tabMessages.length = 0;
+  const started = await dispatch({ action: "start", tabId: 7 });
   attachFailure = null;
-  expect(res.ok).toBe(false);
-  expect(res.error).toMatch(/Another extension has added content to this page/);
-  expect(res.error).not.toMatch(/Could not attach debugger|chrome-extension:/);
-  expect((await dispatch({ action: "getStatus" })).recording).toBe(false);
-  // A second start on a clean tab works: the failed attach left no session state.
+  expect(started.ok).toBe(true);
+  expect(started.blockedBy).toEqual(["aaaa"]);
+  expect(started.warning).toMatch(/reduced mode: extension aaaa/);
+  expect((await dispatch({ action: "getStatus" })).capture).toBe("inject");
+  // the lane armed the probe, asked the page for device info, and screenshotted via captureVisibleTab
+  expect(tabMessages.map((m) => m.msg.action)).toEqual(expect.arrayContaining(["oj-probe-start", "oj-device-info", "oj-rrweb-start"]));
+  expect(captureVisibleTabCalls).toBe(1);
+  // a reloaded page asks hello → resume both recorder and probe
+  expect(await dispatch({ type: "oj-rrweb-hello" }, { tab: { id: 7 } })).toEqual({ record: true, probe: true });
+
+  // probe records from the recorded tab land on the timeline with the CDP schema
+  const now = Date.now(); // report events sort by t; the warning was pushed at start
+  const records = [
+    { kind: "console", level: "log", t: now + 1, message: "counter is now 1", stack: [] },
+    { kind: "net-start", requestId: "f1", t: now + 2, method: "GET", url: "https://example.test/api", resourceType: "fetch", requestHeaders: {}, requestBody: null },
+    { kind: "net-end", requestId: "f1", t: now + 10, status: 200, statusText: "OK", mimeType: "application/json", responseHeaders: {}, durationMs: 9, encodedBytes: 2, responseBody: "{}", failed: false },
+    { kind: "error", t: now + 20, message: "Error: boom\n    at x", url: "https://example.test/app", line: 1, column: 1 },
+  ];
+  expect(await dispatch({ type: "oj-page-batch", eventsJson: JSON.stringify(records) }, { tab: { id: 7 } })).toEqual({ ok: true });
+  // …but not from another tab
+  expect(await dispatch({ type: "oj-page-batch", eventsJson: "[]" }, { tab: { id: 8 } })).toEqual({ stop: true });
+
+  await dispatch({ action: "stop" });
+  const report = store[storedReports()[0]];
+  expect(report.meta.capture).toBe("inject");
+  expect(report.device.userAgent).toBe("probe-ua");
+  const kinds = report.events.map((e) => e.kind);
+  expect(kinds[0]).toBe("log"); // the reduced-mode warning leads the timeline
+  expect(report.events[0].detail.blockedBy).toEqual(["aaaa"]);
+  const net = report.events.find((e) => e.kind === "network");
+  expect(net.detail).toMatchObject({ method: "GET", status: 200, resourceType: "fetch", responseBody: "{}", durationMs: 9 });
+  expect(report.events.find((e) => e.kind === "console").title).toBe("counter is now 1");
+  expect(report.events.find((e) => e.kind === "error").title).toBe("Error: boom");
+  expect(report.events.filter((e) => e.kind === "screenshot").every((e) => e.detail.image === "data:image/png;base64,AA==")).toBe(true);
+  // on the cdp lane, probe batches are refused even from the recorded tab
+  frameSrcs = [];
   expect((await dispatch({ action: "start", tabId: 7 })).ok).toBe(true);
+  expect(await dispatch({ type: "oj-page-batch", eventsJson: "[]" }, { tab: { id: 7 } })).toEqual({ stop: true });
+  await dispatch({ action: "stop" });
+});
+
+test("a foreign frame the scan cannot see still records, with an unnamed warning", async () => {
+  attachFailure = new Error("Cannot access a chrome-extension:// URL of different extension");
+  frameSrcs = [];
+  const started = await dispatch({ action: "start", tabId: 7 });
+  attachFailure = null;
+  expect(started).toMatchObject({ ok: true, blockedBy: [] });
+  expect(started.warning).toMatch(/reduced mode: another extension has content/);
   await dispatch({ action: "stop" });
 });
 
@@ -228,6 +282,7 @@ test("other attach failures keep the raw CDP error so the issue link carries it"
   attachFailure = null;
   expect(res.ok).toBe(false);
   expect(res.error).toBe("Could not attach debugger: Error: Another debugger is already attached to the tab with id: 7.");
+  expect((await dispatch({ action: "getStatus" })).recording).toBe(false);
 });
 
 test("a session records on the cdp lane and the report says so (meta.capture)", async () => {

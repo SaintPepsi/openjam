@@ -6,6 +6,8 @@
 // chrome.runtime.sendMessage and relays start/stop commands back to the
 // recorder over window.postMessage. Bundled by build.mjs into
 // dist/rrweb-relay.js.
+import { collectDeviceInfo } from "./device-info.js";
+
 const TO_RELAY = "oj-rec-to-relay"; // envelope tag for messages from the recorder
 const FROM_RELAY = "oj-relay-to-rec"; // envelope tag for messages to the recorder
 
@@ -14,6 +16,9 @@ function main() {
   // announces "ready" after we already know (e.g. it loaded second, or resumed
   // after navigation) gets told to start.
   let recording = false;
+  // Whether the background wants the page probe (inject lane) armed. Same
+  // ready/start handshake as the recorder, so load order never matters.
+  let probe = false;
 
   function toRecorder(kind) {
     window.postMessage({ __oj: FROM_RELAY, kind }, "*");
@@ -44,6 +49,20 @@ function main() {
       }
     } else if (msg.kind === "ready" && recording) {
       toRecorder("start");
+    } else if (msg.kind === "probe-batch") {
+      try {
+        chrome.runtime.sendMessage({ type: "oj-page-batch", eventsJson: msg.eventsJson }, (res) => {
+          if (chrome.runtime.lastError) return;
+          if (res && res.stop) {
+            probe = false;
+            toRecorder("probe-stop");
+          }
+        });
+      } catch {
+        // extension reloaded mid-recording — nothing useful to do
+      }
+    } else if (msg.kind === "probe-ready" && probe) {
+      toRecorder("probe-start");
     }
   });
 
@@ -57,6 +76,16 @@ function main() {
       recording = false;
       toRecorder("stop");
       sendResponse({ ok: true });
+    } else if (msg.action === "oj-probe-start") {
+      probe = true;
+      toRecorder("probe-start");
+      sendResponse({ ok: true });
+    } else if (msg.action === "oj-probe-stop") {
+      probe = false;
+      toRecorder("probe-stop");
+      sendResponse({ ok: true });
+    } else if (msg.action === "oj-device-info") {
+      sendResponse(collectDeviceInfo());
     }
   });
 
@@ -68,6 +97,10 @@ function main() {
       if (res && res.record) {
         recording = true;
         toRecorder("start");
+      }
+      if (res && res.probe) {
+        probe = true;
+        toRecorder("probe-start");
       }
     });
   } catch {
