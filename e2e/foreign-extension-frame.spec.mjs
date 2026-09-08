@@ -15,9 +15,12 @@
 // src/lanes/inject.js start() → the console/network/error assertions fail.
 import { test, expect } from "@playwright/test";
 import path from "node:path";
+import { readFileSync } from "node:fs";
 import { launchExtension, serveFixture, openPopup, tabIdOf, sendAction, stopAndOpenViewer, ROOT } from "../test/e2e/harness.mjs";
 
 test.describe.configure({ mode: "serial" });
+
+const FIXTURE_ID = readFileSync(path.join(ROOT, "test", "e2e", "foreign-extension", "ID"), "utf8").trim();
 
 let context, extensionId, fixtureServer;
 
@@ -41,6 +44,9 @@ async function openFixtureWithForeignFrame() {
   await expect(page.frameLocator("#foreign-ext-frame").locator("body")).toHaveText("foreign extension frame");
   const foreignId = await page.locator("#foreign-ext-frame").evaluate((f) => new URL(f.src).host);
   expect(foreignId).not.toBe(extensionId);
+  // The fixture manifest pins a `key`, so its id is the same on every machine and
+  // the popup/viewer pixel baselines below stay deterministic.
+  expect(foreignId).toBe(FIXTURE_ID);
   return { page, foreignId };
 }
 
@@ -85,8 +91,10 @@ test("another extension's iframe: recording runs on the inject lane and names th
   expect(shots[0].detail.image.startsWith("data:image/png;base64,")).toBe(true);
   expect(shots[0].detail.image.length).toBeGreaterThan(1000);
 
-  // The viewer says so where the reader looks first.
+  // The viewer says so where the reader looks first. Pixel baseline of the header
+  // so the reduced-mode badge is something a reporter can be shown.
   await expect(viewer.locator(".meta")).toContainText("reduced (no debugger)");
+  await expect(viewer.locator(".meta")).toHaveScreenshot("viewer-reduced-mode-meta.png");
 
   await viewer.close();
   await popup.close();
@@ -105,6 +113,9 @@ test("popup shows the gold reduced-mode notice with a Manage extension button", 
   await expect(warn.locator("button.act")).toHaveCount(1);
   await expect(popup.locator("openjam-popup .err")).toBeHidden();
   await expect(popup.locator("openjam-popup .st-lbl")).toHaveText("REC");
+  // Visual baseline of the reduced-mode popup: the gold notice naming the fixture
+  // extension plus its Manage button. This PNG is what we show a reporter.
+  await expect(popup.locator("openjam-popup .card")).toHaveScreenshot("popup-reduced-mode.png");
   await sendAction(popup, { action: "stop" });
   await popup.close();
   await page.close();

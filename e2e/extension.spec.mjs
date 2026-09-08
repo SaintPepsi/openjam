@@ -512,6 +512,12 @@ test("restricted pages fail with a reportable error", async () => {
     "href",
     /github\.com\/SaintPepsi\/openjam\/issues\/new/,
   );
+  // The link inherits the notice's colour; the browser default link blue on the
+  // red box was unreadable (#48). Disconfirming: drop the `.notice a` rule.
+  const linkColor = await popup.locator("openjam-popup .err a").evaluate((a) => getComputedStyle(a).color);
+  const boxColor = await popup.locator("openjam-popup .err").evaluate((e) => getComputedStyle(e).color);
+  expect(linkColor).toBe(boxColor);
+  expect(linkColor).not.toBe("rgb(0, 0, 238)");
   // The PII warning is its OWN gold notice, not fused into the red error box.
   await expect(popup.locator("openjam-popup .warn")).toContainText("remove any PII");
   await expect(popup.locator("openjam-popup .err .pii-warning")).toHaveCount(0);

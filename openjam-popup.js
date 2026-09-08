@@ -130,6 +130,9 @@
     ".notice{font-size:11.5px; border-radius:8px; padding:8px 10px; margin-top:2px; font-weight:600; line-height:1.4}",
     ".err{border:1px solid var(--red); background:rgba(248,81,73,.15); color:#ff7b72}",
     ".warn{border:1px solid var(--gold); background:rgba(210,153,34,.15); color:#e3b341}",
+    // Links inside a notice take the notice's own colour: the browser default
+    // (#0000ee) on the red box was unreadable (#48 screenshot).
+    ".notice a{color:inherit; text-decoration:underline; text-underline-offset:2px; display:inline-block; margin-top:6px}",
     ".warn .act{display:block; margin-top:8px; padding:6px 10px; border:1px solid var(--gold); border-radius:6px; background:transparent; color:inherit; font:inherit; cursor:pointer}",
     ".hint{color:var(--muted); font-size:11.5px; line-height:1.5; padding:4px 5px 2px}",
     ".hint a{color:var(--accent)}",
