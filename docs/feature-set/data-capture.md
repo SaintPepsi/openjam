@@ -6,7 +6,8 @@ Part of the [OpenJam feature set](README.md).
 
 OpenJam attaches the [Chrome DevTools Protocol](https://chromedevtools.github.io/devtools-protocol/)
 (`chrome.debugger`) to the active tab — the same mechanism DevTools itself uses — and
-records, per [README → How it works](../../README.md#how-it-works):
+records, per [README → How it works](../../README.md#how-it-works) (when it cannot attach,
+see [reduced mode](#when-chromes-debugger-is-unavailable-reduced-mode) below):
 
 | Source | CDP domain | What you get |
 |---|---|---|
