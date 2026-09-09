@@ -147,11 +147,15 @@ https.request("https://oauth2.googleapis.com/token",{method:"POST",headers:{"Con
 > 2026-06-26. (`bpp` uploads *and* publishes, which conflicts with an item still
 > in review — only tag while nothing is pending.)
 
-1. Bump `version` in `manifest.json` + `package.json` (e.g. `0.4.3`), open a PR, merge.
-2. Tag and push from `main`:
+1. Bump, commit and tag in one step from `main` (the `version` script in
+   `package.json` copies the new number into `manifest.json`):
    ```sh
    git checkout main && git pull
-   git tag v0.4.3 && git push origin v0.4.3
+   npm version patch   # or minor / major
+   ```
+2. Push the commit and the tag; the tag triggers the release workflow:
+   ```sh
+   git push --follow-tags
    ```
 3. Watch it:
    ```sh

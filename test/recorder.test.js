@@ -86,6 +86,9 @@ test("starts on the relay's start command and drains the buffer on the flush int
   // e2e acceptance test is the in-CI end-to-end lever since CI builds from
   // source; the e2e negative is a one-time manual confirmation).
   expect(capturedOpts.inlineImages).toBe(true);
+  // #44: exported reports hit 87.6 MB of lossless-PNG inlineImages. Disconfirming
+  // input: drop dataURLOptions in src/rrweb-recorder.js and this goes red.
+  expect(capturedOpts.dataURLOptions).toEqual({ type: "image/webp", quality: 0.6 });
   // Issue #44 causal guard: sampling throttles high-frequency events (mousemove/
   // scroll/media/input) and slimDOMOptions drops non-visible <head>/script/comment
   // nodes from snapshots — both cut export size. Disconfirming input: drop either

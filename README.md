@@ -195,7 +195,7 @@ replay iframe is ever created), and `build.mjs` bundles the engine directly inst
 - Replay events are held in memory uncompressed — keep captures short (minutes, not hours). The manifest requests [`unlimitedStorage`](https://developer.chrome.com/docs/extensions/reference/api/storage#storage_areas), so the ~10 MB `chrome.storage.local` quota doesn't apply; if a save still fails (disk pressure), the report degrades in layers: replay dropped (noted on the timeline), then screenshot pixels.
 - Only the most recent report is kept in extension storage (quota); download the HTML to keep a capture.
 - Canvas/WebGL, video frames, and cross-origin iframes replay imperfectly (DOM replay, not pixels — see `plans/PHASE_3_PLAN.md`).
-- Images may not render in offline replay (rrweb `inlineImages` default off); structure and text replay faithfully.
+- Images are inlined at record time (rrweb `inlineImages`, re-encoded as webp), so offline replay renders them; structure and text replay faithfully.
 - Chromium-only (Chrome, Vivaldi, Edge, Brave), Manifest V3. While recording, the background worker pings an extension API every 20 s so it is not evicted mid-session ([SW lifecycle docs](https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle)); an active `chrome.debugger` session pins it as well on Chrome ≥118. Firefox/Safari need the injection pivot in `plans/PHASE_4_PLAN.md`.
 
 ## Roadmap (researched & verified plans in plans/)

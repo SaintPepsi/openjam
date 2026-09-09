@@ -208,11 +208,13 @@ function main() {
     // page already loaded with crossOrigin="anonymous" (no new destination,
     // not new egress), then falls back to the untouched src with a
     // console.warn if the server still has no CORS headers.
-    // Ships default PNG (lossless); unlimitedStorage lifts the storage quota.
-    // Size knob if reports prove too large (reversible fast-follow):
-    // dataURLOptions: { type: "image/jpeg", quality: 0.8 }.
+    // Without dataURLOptions the canvas re-encode defaults to lossless PNG, which on
+    // image-heavy pages is the whole export: the #44 report was 87.6 MB, almost
+    // entirely inlined PNGs. webp at 0.6 (REPLAY_DESIGN.md §4) is lossy, but
+    // photographic content tolerates it and the size win is an order of magnitude.
     stopFn = record({
       inlineImages: true,
+      dataURLOptions: { type: "image/webp", quality: 0.6 },
       sampling: SAMPLING,
       slimDOMOptions: SLIM_DOM_OPTIONS,
       emit(event) {
