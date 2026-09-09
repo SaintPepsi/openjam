@@ -151,11 +151,11 @@ https.request("https://oauth2.googleapis.com/token",{method:"POST",headers:{"Con
    `package.json` copies the new number into `manifest.json`):
    ```sh
    git checkout main && git pull
-   npm version patch --ignore-scripts=false   # or minor / major
+   npm run bump -- patch   # or minor / major
    ```
-   `--ignore-scripts=false` matters: a global `ignore-scripts=true` in `~/.npmrc`
-   silently skips the `version` hook, and the tag ships a stale `manifest.json`.
-   Check before pushing: `git show --stat HEAD` must list `manifest.json`.
+   `npm run bump` is `npm version` with the `version` hook force-enabled. Plain
+   `npm version patch` skips the hook when `~/.npmrc` has `ignore-scripts=true`
+   and tags a stale `manifest.json`. Check: `git show --stat HEAD` lists it.
 2. Push the commit and the tag; the tag triggers the release workflow:
    ```sh
    git push --follow-tags
