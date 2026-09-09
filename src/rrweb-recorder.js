@@ -19,6 +19,7 @@ const FLUSH_INTERVAL_MS = 500;
 // still generous for an in-memory blob fetch + FileReader (typically single-digit ms).
 const REWRITE_TIMEOUT_MS = 300;
 const TO_RELAY = "oj-rec-to-relay"; // envelope tag for messages we send
+const FLUSH_EVENT = "oj-recorder-flush"; // DOM event: synchronous cross-world hop for pagehide
 const FROM_RELAY = "oj-relay-to-rec"; // envelope tag for messages we receive
 
 // Emit-side blob: -> data: rewriter (WHY):
@@ -150,13 +151,26 @@ function main() {
   // in flight just keeps its original blob: src for that one image; the
   // events themselves are never at risk of being dropped.
   function flushSync() {
-    if (!buffer.length) return;
+    const eventsJson = drainSync();
+    if (eventsJson) post("batch", { eventsJson });
+  }
+
+  // pagehide: a postMessage is a queued task and dies with the unloading
+  // document, so the last ~500 ms of replay before a navigation were lost. A DOM
+  // event reaches the relay's listener synchronously, in every world.
+  function flushOnPagehide() {
+    const eventsJson = drainSync();
+    if (eventsJson) document.dispatchEvent(new CustomEvent(FLUSH_EVENT, { detail: eventsJson }));
+  }
+
+  function drainSync() {
+    if (!buffer.length) return null;
     const events = buffer;
     buffer = [];
     pending = [];
     // Same storage-serialization cliff as flush(): stringify so deep DOM
     // survives end to end (see flush() above for the verified mechanism).
-    post("batch", { eventsJson: JSON.stringify(events) });
+    return JSON.stringify(events);
   }
 
   function start() {
@@ -226,7 +240,7 @@ function main() {
 
   // Don't lose the last partial batch when the page navigates away. Uses the
   // synchronous drain: an unloading page can't await the blob rewrites.
-  window.addEventListener("pagehide", flushSync);
+  window.addEventListener("pagehide", flushOnPagehide);
 
   // Announce readiness: a relay that loaded first (or resumed after a
   // mid-recording navigation) re-sends "start" once it sees this.

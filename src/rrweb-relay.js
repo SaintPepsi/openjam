@@ -11,6 +11,7 @@ import { collectDeviceInfo } from "./device-info.js";
 const TO_RELAY = "oj-rec-to-relay"; // envelope tag for messages from the recorder
 const FROM_RELAY = "oj-relay-to-rec"; // envelope tag for messages to the recorder
 const PROBE_FLUSH_EVENT = "oj-probe-flush"; // the probe's synchronous pagehide hop
+const RECORDER_FLUSH_EVENT = "oj-recorder-flush"; // the recorder's
 
 function main() {
   // Whether the background wants this page recorded. Tracked so a recorder that
@@ -23,6 +24,27 @@ function main() {
 
   function toRecorder(kind) {
     window.postMessage({ __oj: FROM_RELAY, kind }, "*");
+  }
+
+  function forwardRecorderBatch(eventsJson) {
+    try {
+      // Forward the batch as the JSON string the recorder produced. The verified
+      // cliff is chrome.storage.local.set, not this sendMessage hop — isolation
+      // testing showed the MV3 structured clone carries a deep array through
+      // sendMessage intact. Parsing here would just break the one-string-
+      // contract-everywhere defense-in-depth, so keep it a string regardless.
+      chrome.runtime.sendMessage({ type: "oj-rrweb-batch", eventsJson }, (res) => {
+        if (chrome.runtime.lastError) return;
+        // {stop:true}: the session ended without the recorder being told
+        // (e.g. debug banner dismissed) — stop serializing the page.
+        if (res && res.stop) {
+          recording = false;
+          toRecorder("stop");
+        }
+      });
+    } catch {
+      // extension reloaded mid-recording — nothing useful to do
+    }
   }
 
   function forwardProbeBatch(eventsJson) {
@@ -39,8 +61,11 @@ function main() {
     }
   }
 
-  // Probe → background, the synchronous way (pagehide). detail is a string:
-  // primitives cross the world boundary, objects don't.
+  // Recorder/probe → background, the synchronous way (pagehide). detail is a
+  // string: primitives cross the world boundary, objects don't.
+  document.addEventListener(RECORDER_FLUSH_EVENT, (e) => {
+    if (typeof e.detail === "string") forwardRecorderBatch(e.detail);
+  });
   document.addEventListener(PROBE_FLUSH_EVENT, (e) => {
     if (typeof e.detail === "string") forwardProbeBatch(e.detail);
   });
@@ -50,24 +75,7 @@ function main() {
     if (e.source !== window || !e.data || e.data.__oj !== TO_RELAY) return;
     const msg = e.data;
     if (msg.kind === "batch") {
-      try {
-        // Forward the batch as the JSON string the recorder produced. The verified
-        // cliff is chrome.storage.local.set, not this sendMessage hop — isolation
-        // testing showed the MV3 structured clone carries a deep array through
-        // sendMessage intact. Parsing here would just break the one-string-
-        // contract-everywhere defense-in-depth, so keep it a string regardless.
-        chrome.runtime.sendMessage({ type: "oj-rrweb-batch", eventsJson: msg.eventsJson }, (res) => {
-          if (chrome.runtime.lastError) return;
-          // {stop:true}: the session ended without the recorder being told
-          // (e.g. debug banner dismissed) — stop serializing the page.
-          if (res && res.stop) {
-            recording = false;
-            toRecorder("stop");
-          }
-        });
-      } catch {
-        // extension reloaded mid-recording — nothing useful to do
-      }
+      forwardRecorderBatch(msg.eventsJson);
     } else if (msg.kind === "ready" && recording) {
       toRecorder("start");
     } else if (msg.kind === "probe-batch") {

@@ -158,6 +158,15 @@ test("oj-probe-stop disarms; oj-device-info answers with the shared collector's 
   expect(info).toMatchObject({ userAgent: "ua", url: "https://page.test/", title: "T", viewport: { width: 2, height: 3 }, memory: null });
 });
 
+test("the recorder's synchronous pagehide flush (DOM event) reaches the background like a normal batch", () => {
+  // Disconfirming: remove the oj-recorder-flush listener in the relay → nothing sent.
+  const before = sent.length;
+  documentEvents["oj-recorder-flush"]({ detail: '[{"type":3}]' });
+  expect(sent.slice(before)).toEqual([{ type: "oj-rrweb-batch", eventsJson: '[{"type":3}]' }]);
+  documentEvents["oj-recorder-flush"]({ detail: { nope: 1 } });
+  expect(sent.length).toBe(before + 1);
+});
+
 test("the probe's synchronous pagehide flush (DOM event) reaches the background like a normal batch", () => {
   // postMessage tasks die with the unloading document; the probe dispatches a
   // DOM event instead, which is delivered synchronously across worlds.

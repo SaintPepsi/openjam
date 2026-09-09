@@ -104,6 +104,17 @@ test("another extension's iframe: recording runs on the inject lane and names th
   expect(fetched.detail).toMatchObject({ method: "GET", status: 200, resourceType: "fetch" });
   expect(fetched.detail.responseBody).toContain("OpenJam E2E Fixture");
   expect(byKind("error").some((e) => e.title.includes("fixture test error"))).toBe(true);
+  // The replay keeps the click made right before the reload: rrweb's last
+  // batch crossed to the relay synchronously on pagehide. Two full snapshots
+  // (one per document) and, before the second one, the mutation that set the
+  // counter to "1" (textContent swaps the text node: it arrives as an add).
+  // Disconfirming: point the recorder's pagehide listener back at flushSync().
+  const rr = JSON.parse(report.rrwebEvents);
+  const snapshots = rr.map((e, i) => (e.type === 2 ? i : -1)).filter((i) => i >= 0);
+  expect(snapshots).toHaveLength(2);
+  const mutationsBetween = rr.slice(snapshots[0], snapshots[1]).filter((e) => e.type === 3 && e.data.source === 0);
+  const textValues = mutationsBetween.flatMap((e) => [...(e.data.texts || []).map((t) => t.value), ...(e.data.adds || []).map((a) => a.node && a.node.textContent)]);
+  expect(textValues).toContain("1");
   const shots = byKind("screenshot").filter((e) => e.detail.image);
   expect(shots.length).toBeGreaterThanOrEqual(2); // started + stopped (+ on error)
   expect(shots[0].detail.image.startsWith("data:image/png;base64,")).toBe(true);
