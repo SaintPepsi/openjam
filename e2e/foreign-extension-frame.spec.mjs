@@ -121,8 +121,18 @@ test("another extension's iframe: recording runs on the inject lane and names th
   expect(shots[0].detail.image.length).toBeGreaterThan(1000);
 
   // The viewer says so where the reader looks first. Pixel baseline of the header
-  // so the reduced-mode badge is something a reporter can be shown.
+  // so the reduced-mode badge is something a reporter can be shown. The other
+  // header items (URL port, capture time, duration, event count) vary per run,
+  // so pin them in storage and re-render before comparing pixels.
   await expect(viewer.locator(".meta")).toContainText("reduced (no debugger)");
+  await popup.evaluate(async () => {
+    const all = await chrome.storage.local.get(null);
+    const r = all[all.lastReportKey];
+    r.meta = { ...r.meta, pageUrl: "https://app.example/checkout", capturedAt: Date.UTC(2026, 8, 9, 10, 0, 0), durationMs: 12300, eventCount: 42 };
+    await chrome.storage.local.set({ [all.lastReportKey]: r });
+  });
+  await viewer.reload();
+  await expect(viewer.locator(".meta")).toContainText("app.example/checkout");
   await expect(viewer.locator(".meta")).toHaveScreenshot("viewer-reduced-mode-meta.png");
 
   await viewer.close();
