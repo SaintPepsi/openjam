@@ -22,6 +22,14 @@ globalThis.window = {
     posted.push(msg);
   },
 };
+const documentEvents = {};
+globalThis.document = {
+  referrer: "",
+  title: "T",
+  addEventListener(name, fn) {
+    documentEvents[name] = fn;
+  },
+};
 globalThis.chrome = {
   runtime: {
     get lastError() {
@@ -107,4 +115,72 @@ test("ignores a recorder ready announcement when not recording", () => {
   const before = toRecorder().length;
   fromRecorder("ready");
   expect(toRecorder().slice(before)).not.toContain("start");
+});
+
+// ---- page probe (inject lane) -------------------------------------------
+
+test("arms the probe on oj-probe-start and re-arms a probe that announces readiness later", () => {
+  const before = toRecorder().length;
+  expect(fromBackground("oj-probe-start")).toEqual({ ok: true });
+  fromRecorder("probe-ready");
+  expect(toRecorder().slice(before)).toEqual(["probe-start", "probe-start"]);
+});
+
+test("forwards probe batches verbatim as oj-page-batch and stops the probe on {stop:true}", () => {
+  const eventsJson = JSON.stringify([{ kind: "console", level: "log", t: 1, message: "x" }]);
+  const before = sent.length;
+  fromRecorder("probe-batch", { eventsJson });
+  const fwd = sent.slice(before).find((m) => m.type === "oj-page-batch");
+  expect(fwd.eventsJson).toBe(eventsJson);
+  // background says stop → relay disarms the probe
+  const origSend = chrome.runtime.sendMessage;
+  chrome.runtime.sendMessage = (msg, cb) => (msg.type === "oj-page-batch" ? cb({ stop: true }) : origSend(msg, cb));
+  const b2 = toRecorder().length;
+  fromRecorder("probe-batch", { eventsJson });
+  chrome.runtime.sendMessage = origSend;
+  expect(toRecorder().slice(b2)).toContain("probe-stop");
+  fromRecorder("probe-ready");
+  expect(toRecorder().slice(b2)).not.toContain("probe-start"); // disarmed: readiness no longer re-arms
+});
+
+test("one oj-rrweb-stop disarms both the recorder and the probe; oj-device-info answers with the shared collector's shape", () => {
+  // The background sends a single stop; the probe must flush inside the same
+  // grace window as the recorder, so the relay fans the stop out to both.
+  // Disconfirming: drop the probe half of stopAll() → no "probe-stop" below.
+  fromBackground("oj-probe-start");
+  const before = toRecorder().length;
+  expect(fromBackground("oj-rrweb-stop")).toEqual({ ok: true });
+  expect(toRecorder().slice(before)).toEqual(["stop", "probe-stop"]);
+  fromRecorder("probe-ready");
+  expect(toRecorder().slice(before)).not.toContain("probe-start"); // disarmed: readiness no longer re-arms
+  globalThis.navigator = { userAgent: "ua", platform: "p", language: "en", languages: ["en"], vendor: "", cookieEnabled: true, onLine: true };
+  globalThis.location = { href: "https://page.test/" };
+  globalThis.screen = { width: 1, height: 1, colorDepth: 24 };
+  globalThis.window.innerWidth = 2;
+  globalThis.window.innerHeight = 3;
+  globalThis.window.devicePixelRatio = 1;
+  globalThis.performance = {};
+  const info = fromBackground("oj-device-info");
+  expect(info).toMatchObject({ userAgent: "ua", url: "https://page.test/", title: "T", viewport: { width: 2, height: 3 }, memory: null });
+});
+
+test("the recorder's synchronous pagehide flush (DOM event) reaches the background like a normal batch", () => {
+  // Disconfirming: remove the oj-recorder-flush listener in the relay → nothing sent.
+  const before = sent.length;
+  documentEvents["oj-recorder-flush"]({ detail: '[{"type":3}]' });
+  expect(sent.slice(before)).toEqual([{ type: "oj-rrweb-batch", eventsJson: '[{"type":3}]' }]);
+  documentEvents["oj-recorder-flush"]({ detail: { nope: 1 } });
+  expect(sent.length).toBe(before + 1);
+});
+
+test("the probe's synchronous pagehide flush (DOM event) reaches the background like a normal batch", () => {
+  // postMessage tasks die with the unloading document; the probe dispatches a
+  // DOM event instead, which is delivered synchronously across worlds.
+  // Disconfirming: remove the oj-probe-flush listener in the relay → nothing sent.
+  const before = sent.length;
+  documentEvents["oj-probe-flush"]({ detail: '[{"kind":"console"}]' });
+  expect(sent.slice(before)).toEqual([{ type: "oj-page-batch", eventsJson: '[{"kind":"console"}]' }]);
+  // an object detail (which would be null across worlds anyway) is ignored
+  documentEvents["oj-probe-flush"]({ detail: { nope: 1 } });
+  expect(sent.length).toBe(before + 1);
 });

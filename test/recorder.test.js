@@ -26,7 +26,13 @@ mock.module("rrweb", () => ({
 }));
 
 const posted = [];
+const dispatched = [];
 const windowEvents = {};
+globalThis.document = {
+  dispatchEvent(ev) {
+    dispatched.push(ev);
+  },
+};
 globalThis.window = {
   addEventListener(name, fn) {
     windowEvents[name] = fn;
@@ -131,15 +137,23 @@ test("stops when the relay sends stop (orphaned recorder / explicit stop) and fl
   expect(batches()[before][0].timestamp).toBe(7);
 });
 
-test("pagehide flushes the partial buffer immediately (no tail loss on navigation)", () => {
+test("pagehide flushes the partial buffer immediately over a DOM event (no tail loss on navigation)", () => {
+  // A postMessage queued during pagehide dies with the document, so the hop
+  // must be synchronous: a DOM event the relay listens to. Disconfirming:
+  // point the pagehide listener back at flushSync() → dispatched stays empty
+  // and a postMessage batch appears instead.
   fromRelay("start"); // restart after the stop above
   expect(recordCalls).toBe(2);
   const before = batches().length;
   currentEmit({ type: 3, timestamp: 8 });
   currentEmit({ type: 3, timestamp: 9 });
   windowEvents.pagehide(); // no 500ms wait
-  expect(batches().length).toBe(before + 1);
-  expect(batches()[before].length).toBe(2);
+  expect(batches().length).toBe(before);
+  expect(dispatched).toHaveLength(1);
+  expect(dispatched[0].type).toBe("oj-recorder-flush");
+  expect(JSON.parse(dispatched[0].detail)).toEqual([{ type: 3, timestamp: 8 }, { type: 3, timestamp: 9 }]);
+  windowEvents.pagehide(); // empty buffer: nothing dispatched
+  expect(dispatched).toHaveLength(1);
 });
 
 test("rewrites a mid-recording blob: <img> src to a data: URI before the batch flushes", async () => {

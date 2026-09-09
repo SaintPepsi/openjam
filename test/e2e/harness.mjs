@@ -13,14 +13,17 @@ export const ROOT = path.dirname(path.dirname(path.dirname(fileURLToPath(import.
 // Extensions need a persistent context, and `channel: "chromium"` selects
 // the full browser whose new headless mode supports extensions — the default
 // headless shell does not (https://playwright.dev/docs/chrome-extensions).
-export async function launchExtension({ headful = !!process.env.HEADFUL } = {}) {
+// `extraExtensions` loads additional unpacked extensions alongside OpenJam, for
+// specs that need another extension present on the page (issue #48).
+export async function launchExtension({ headful = !!process.env.HEADFUL, extraExtensions = [] } = {}) {
+  const extensionPaths = [ROOT, ...extraExtensions].join(",");
   const context = await chromium.launchPersistentContext("", {
     channel: "chromium",
     headless: !headful,
     viewport: { width: 1280, height: 800 },
     args: [
-      `--disable-extensions-except=${ROOT}`,
-      `--load-extension=${ROOT}`,
+      `--disable-extensions-except=${extensionPaths}`,
+      `--load-extension=${extensionPaths}`,
       // Give headless Chromium a synthetic microphone and auto-accept the
       // getUserMedia permission prompt, so the audio-capture e2e can grant and
       // record without a real device or a manual click.
@@ -28,7 +31,10 @@ export async function launchExtension({ headful = !!process.env.HEADFUL } = {}) 
       "--use-fake-ui-for-media-stream",
     ],
   });
-  const sw = context.serviceWorkers()[0] ?? (await context.waitForEvent("serviceworker"));
+  // With several extensions loaded, the first service worker to appear may not
+  // be OpenJam's; wait for the one whose script is background.js.
+  const isOpenJam = (w) => new URL(w.url()).pathname === "/background.js";
+  const sw = context.serviceWorkers().find(isOpenJam) ?? (await context.waitForEvent("serviceworker", isOpenJam));
   const extensionId = new URL(sw.url()).host;
   // Pre-grant mic to the extension origin so the popup's permission check
   // (navigator.permissions.query) reports "granted" and enumerates inline,

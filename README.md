@@ -59,6 +59,12 @@ OpenJam attaches the [Chrome DevTools Protocol](https://chromedevtools.github.io
 Every event is normalised to a wall-clock timestamp so the report renders one ordered,
 filterable timeline.
 
+If the debugger cannot attach (most often because another extension has an iframe in the
+page), OpenJam records in **reduced mode** from a page probe it puts into that tab: console,
+errors, fetch/XHR and viewport screenshots, plus the full session replay. The popup says why
+and the report carries `meta.capture: "inject"`. Details in
+[`docs/feature-set/data-capture.md`](docs/feature-set/data-capture.md#when-chromes-debugger-is-unavailable-reduced-mode).
+
 ### For AI agents
 
 Each report embeds a small `<script id="openjam-ai" type="application/json">` manifest
@@ -183,13 +189,14 @@ replay iframe is ever created), and `build.mjs` bundles the engine directly inst
 
 ## Known limitations (MVP — see plans/MVP_PLAN.md for the cut list)
 
+- When the debugger cannot attach (another extension's iframe in the page, DevTools already holding the tab, …), OpenJam records in reduced mode: console, errors, fetch/XHR and viewport screenshots, no other network loads, top frame only. The popup quotes the reason and names the extension when that is the cause; see `docs/feature-set/data-capture.md`.
 - Console/network history before **Start** is not captured — recording is forward-only.
 - Response bodies are captured only for text-like types under 100 KB (configurable via `BODY_CAPTURE_MAX_BYTES` in `background.js`).
 - Replay events are held in memory uncompressed — keep captures short (minutes, not hours). The manifest requests [`unlimitedStorage`](https://developer.chrome.com/docs/extensions/reference/api/storage#storage_areas), so the ~10 MB `chrome.storage.local` quota doesn't apply; if a save still fails (disk pressure), the report degrades in layers: replay dropped (noted on the timeline), then screenshot pixels.
 - Only the most recent report is kept in extension storage (quota); download the HTML to keep a capture.
 - Canvas/WebGL, video frames, and cross-origin iframes replay imperfectly (DOM replay, not pixels — see `plans/PHASE_3_PLAN.md`).
 - Images may not render in offline replay (rrweb `inlineImages` default off); structure and text replay faithfully.
-- Chromium-only (Chrome, Vivaldi, Edge, Brave), **Chrome ≥118 required**: from 118 an active `chrome.debugger` session keeps the background service worker alive for the whole recording ([SW lifecycle docs](https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle)); on older versions a long idle recording can be evicted. Firefox/Safari need the injection pivot in `plans/PHASE_4_PLAN.md`.
+- Chromium-only (Chrome, Vivaldi, Edge, Brave), Manifest V3. While recording, the background worker pings an extension API every 20 s so it is not evicted mid-session ([SW lifecycle docs](https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle)); an active `chrome.debugger` session pins it as well on Chrome ≥118. Firefox/Safari need the injection pivot in `plans/PHASE_4_PLAN.md`.
 
 ## Roadmap (researched & verified plans in plans/)
 

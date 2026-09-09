@@ -3,14 +3,16 @@
 // logs, network requests, JS errors and screenshots onto one wall-clock timeline.
 
 import { KIND } from "./event-kinds.js";
+import { createCdpLane } from "./src/lanes/cdp.js";
+import { createInjectLane } from "./src/lanes/inject.js";
+import { foreignExtensionIds, listExtensionFrameSrcs } from "./src/foreign-frames.js";
 
-const PROTOCOL_VERSION = "1.3";
-const BODY_CAPTURE_MAX_BYTES = 100 * 1024; // skip large/binary response bodies
 const SCREENSHOT_ON_ERROR_COOLDOWN_MS = 2000;
 
 const session = {
   recording: false,
   stopping: false, // guards re-entrant stopRecording during the grace window
+  lane: null, // which lane this session records on (see src/lanes/); idleLane between sessions
   tabId: null,
   startWall: null, // epoch ms when recording began
   monoOffset: null, // wallMs - (monotonic seconds * 1000), set on first network event
@@ -34,265 +36,82 @@ function pushEvent(event) {
   return full;
 }
 
-function sendCmd(method, params = {}) {
-  return chrome.debugger.sendCommand({ tabId: session.tabId }, method, params);
-}
 
-function monotonicToWall(timestampSeconds) {
-  if (session.monoOffset === null) return Date.now();
-  return timestampSeconds * 1000 + session.monoOffset;
-}
-
-// ---- argument / preview formatting ---------------------------------------
-
-function previewToString(preview) {
-  const props = (preview.properties || []).map((p) =>
-    preview.subtype === "array" ? p.value : p.name + ": " + p.value,
-  );
-  const body = props.join(", ") + (preview.overflow ? ", …" : "");
-  if (preview.subtype === "array") return "[" + body + "]";
-  const label = preview.description && preview.description !== "Object" ? preview.description + " " : "";
-  return label + "{" + body + "}";
-}
-
-function formatRemoteObject(obj) {
-  if (!obj) return "";
-  switch (obj.type) {
-    case "string":
-      return obj.value;
-    case "number":
-    case "boolean":
-      return String(obj.value);
-    case "undefined":
-      return "undefined";
-    case "function":
-      return obj.description || "function";
-    case "object":
-      if (obj.subtype === "null") return "null";
-      if (obj.preview) return previewToString(obj.preview);
-      return obj.description || "[object]";
-    default:
-      return obj.description != null ? obj.description : String(obj.value);
-  }
-}
-
-function formatStackTrace(stackTrace) {
-  if (!stackTrace || !stackTrace.callFrames) return [];
-  return stackTrace.callFrames.map((f) => {
-    const where = (f.url || "<anonymous>") + ":" + (f.lineNumber + 1) + ":" + (f.columnNumber + 1);
-    const name = f.functionName || "(anonymous)";
-    return name + " — " + where;
-  });
-}
-
-function headersToObject(headers) {
-  return headers || {};
-}
-
-// ---- capture helpers ------------------------------------------------------
-
-async function captureDeviceInfo() {
-  const expression = `JSON.stringify({
-    userAgent: navigator.userAgent,
-    platform: navigator.platform,
-    language: navigator.language,
-    languages: navigator.languages,
-    vendor: navigator.vendor,
-    cookieEnabled: navigator.cookieEnabled,
-    online: navigator.onLine,
-    url: location.href,
-    referrer: document.referrer,
-    title: document.title,
-    viewport: { width: window.innerWidth, height: window.innerHeight },
-    screen: { width: screen.width, height: screen.height, dpr: window.devicePixelRatio, colorDepth: screen.colorDepth },
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    memory: (performance.memory ? { usedJSHeapSize: performance.memory.usedJSHeapSize, totalJSHeapSize: performance.memory.totalJSHeapSize, jsHeapSizeLimit: performance.memory.jsHeapSizeLimit } : null)
-  })`;
-  try {
-    const result = await sendCmd("Runtime.evaluate", { expression, returnByValue: true });
-    session.device = JSON.parse(result.result.value);
-  } catch (err) {
-    session.device = { error: String(err) };
-  }
-}
-
-async function captureScreenshot(label) {
-  try {
-    const result = await sendCmd("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
-    pushEvent({
-      t: Date.now(),
-      kind: KIND.SCREENSHOT,
-      title: label,
-      detail: { image: "data:image/png;base64," + result.data },
-    });
-  } catch (err) {
-    pushEvent({ t: Date.now(), kind: KIND.SCREENSHOT, title: label + " (failed)", detail: { error: String(err) } });
-  }
-}
-
-async function fetchResponseBody(requestId, event, response) {
-  const lengthHeader = Number(headersToObject(response.headers)["content-length"] || headersToObject(response.headers)["Content-Length"] || 0);
-  const mime = response.mimeType || "";
-  const texty = /json|text|javascript|xml|html|csv|x-www-form-urlencoded/i.test(mime);
-  if (!texty || (lengthHeader && lengthHeader > BODY_CAPTURE_MAX_BYTES)) return;
-  try {
-    const body = await sendCmd("Network.getResponseBody", { requestId });
-    if (body.base64Encoded) {
-      event.detail.responseBody = "[binary " + (body.body ? body.body.length : 0) + " base64 chars — not decoded]";
-    } else if (body.body && body.body.length <= BODY_CAPTURE_MAX_BYTES) {
-      event.detail.responseBody = body.body;
-    }
-  } catch {
-    // body may already be evicted from the network cache — ignore.
-  }
-}
-
-// ---- CDP event routing ----------------------------------------------------
-
-function onDebuggerEvent(source, method, params) {
-  if (!session.recording || source.tabId !== session.tabId) return;
-
-  switch (method) {
-    case "Network.requestWillBeSent": {
-      if (session.monoOffset === null && params.wallTime != null) {
-        session.monoOffset = params.wallTime * 1000 - params.timestamp * 1000;
-      }
-      const t = params.wallTime != null ? params.wallTime * 1000 : monotonicToWall(params.timestamp);
-      const req = params.request;
-      const event = pushEvent({
-        t,
-        kind: KIND.NETWORK,
-        title: req.method + " " + req.url,
-        detail: {
-          requestId: params.requestId,
-          method: req.method,
-          url: req.url,
-          resourceType: params.type,
-          requestHeaders: headersToObject(req.headers),
-          requestBody: req.postData || null,
-          monoStart: params.timestamp,
-          status: null,
-          statusText: null,
-          mimeType: null,
-          responseHeaders: null,
-          durationMs: null,
-          encodedBytes: null,
-          failed: false,
-        },
-      });
-      session.requestEvents.set(params.requestId, event);
-      break;
-    }
-    case "Network.responseReceived": {
-      const event = session.requestEvents.get(params.requestId);
-      if (!event) break;
-      const r = params.response;
-      event.detail.status = r.status;
-      event.detail.statusText = r.statusText;
-      event.detail.mimeType = r.mimeType;
-      event.detail.responseHeaders = headersToObject(r.headers);
-      event.detail.remoteAddress = r.remoteIPAddress ? r.remoteIPAddress + ":" + r.remotePort : null;
-      event.detail.fromCache = !!r.fromDiskCache;
-      break;
-    }
-    case "Network.loadingFinished": {
-      const event = session.requestEvents.get(params.requestId);
-      if (!event) break;
-      event.detail.encodedBytes = params.encodedDataLength;
-      if (event.detail.monoStart != null) {
-        event.detail.durationMs = Math.round((params.timestamp - event.detail.monoStart) * 1000);
-      }
-      const r = { headers: event.detail.responseHeaders, mimeType: event.detail.mimeType };
-      fetchResponseBody(params.requestId, event, r);
-      break;
-    }
-    case "Network.loadingFailed": {
-      const event = session.requestEvents.get(params.requestId);
-      if (!event) break;
-      event.detail.failed = true;
-      event.detail.errorText = params.errorText;
-      event.detail.canceled = !!params.canceled;
-      event.title = "FAILED " + event.detail.url;
-      break;
-    }
-    case "Runtime.consoleAPICalled": {
-      const text = (params.args || []).map(formatRemoteObject).join(" ");
-      pushEvent({
-        t: params.timestamp || Date.now(),
-        kind: KIND.CONSOLE,
-        level: params.type, // log, info, warning, error, debug
-        title: text,
-        detail: { message: text, stack: formatStackTrace(params.stackTrace) },
-      });
-      if (params.type === "error") maybeErrorScreenshot();
-      break;
-    }
-    case "Runtime.exceptionThrown": {
-      const d = params.exceptionDetails || {};
-      const text = (d.exception && d.exception.description) || d.text || "Uncaught exception";
-      pushEvent({
-        t: params.timestamp || Date.now(),
-        kind: KIND.ERROR,
-        level: "error",
-        title: text.split("\n")[0],
-        detail: {
-          message: text,
-          url: d.url,
-          line: d.lineNumber != null ? d.lineNumber + 1 : null,
-          column: d.columnNumber != null ? d.columnNumber + 1 : null,
-          stack: formatStackTrace(d.stackTrace),
-        },
-      });
-      maybeErrorScreenshot();
-      break;
-    }
-    case "Log.entryAdded": {
-      const e = params.entry;
-      if (e.source === "network" || e.level === "verbose") break; // network errors already captured
-      pushEvent({
-        t: e.timestamp || Date.now(),
-        kind: KIND.LOG,
-        level: e.level,
-        title: e.text,
-        detail: { message: e.text, url: e.url, source: e.source },
-      });
-      break;
-    }
-    default:
-      break;
-  }
+// MV3 evicts an idle worker after ~30 s. On the cdp lane the debugger session
+// pins it; on the inject lane nothing does, and rrweb/probe batches only flow
+// while the page changes. Any extension API call resets the idle timer, so tick
+// one for exactly as long as session.recording is true (harmless on cdp).
+const KEEP_ALIVE_MS = 20_000;
+let keepAliveTimer = null;
+function setRecording(on) {
+  session.recording = on;
+  if (keepAliveTimer) clearInterval(keepAliveTimer);
+  keepAliveTimer = on
+    ? setInterval(() => {
+        try {
+          chrome.runtime.getPlatformInfo(() => {});
+        } catch {
+          // worker shutting down — nothing to keep alive
+        }
+      }, KEEP_ALIVE_MS)
+    : null;
 }
 
 function maybeErrorScreenshot() {
   const now = Date.now();
   if (now - session.lastErrorShot < SCREENSHOT_ON_ERROR_COOLDOWN_MS) return;
   session.lastErrorShot = now;
-  captureScreenshot("Auto-captured on error");
+  session.lane.screenshot("Auto-captured on error");
+}
+
+// What session.lane is between sessions and while startRecording is still
+// attaching. Every lane call is safe; a screenshot records that there was
+// nothing to capture with (a stop can land inside the attach window).
+const idleLane = {
+  name: null,
+  async start() {},
+  async stop() {},
+  async deviceInfo() {},
+  async screenshot(label) {
+    pushEvent({ t: Date.now(), kind: KIND.SCREENSHOT, title: label + " (failed)", detail: { error: "no capture lane active" } });
+  },
+  pageHello: () => false,
+  handleBatch: () => false,
+};
+session.lane = idleLane;
+
+const cdpLane = createCdpLane({ session, pushEvent, maybeErrorScreenshot });
+const injectLane = createInjectLane({ session, pushEvent, maybeErrorScreenshot, tell });
+
+// Content scripts can be absent (extension reloaded after the page loaded, or a
+// page the manifest match didn't reach). Inject both halves: the rrweb recorder
+// into the MAIN world (it patches the page's own stylesheet prototypes), the
+// relay into the isolated world (for chrome.*). The page probe is NOT here: the
+// inject lane adds it only to the tab it records (src/lanes/inject.js).
+async function ensureContentScripts(tabId) {
+  await chrome.scripting.executeScript({ target: { tabId }, files: ["dist/rrweb-recorder.js"], world: "MAIN" });
+  await chrome.scripting.executeScript({ target: { tabId }, files: ["dist/rrweb-relay.js"] });
+}
+
+// Send an action to the tab's relay. If nothing answers (extension reloaded
+// after the page loaded, or a restricted page), inject the content scripts and
+// retry once; rejects when the page cannot host them.
+async function tell(tabId, action) {
+  try {
+    return await chrome.tabs.sendMessage(tabId, { action });
+  } catch {
+    await ensureContentScripts(tabId);
+    return chrome.tabs.sendMessage(tabId, { action });
+  }
 }
 
 // ---- rrweb replay recorder ------------------------------------------------
 
 async function startReplayRecorder(tabId) {
   try {
-    await chrome.tabs.sendMessage(tabId, { action: "oj-rrweb-start" });
-  } catch {
-    // Content scripts absent (e.g. extension was reloaded after the page
-    // loaded, or a restricted page). Inject both halves and retry once: the
-    // rrweb recorder into the MAIN world (so its CSS observers patch the page's
-    // own stylesheet APIs) and the relay into the isolated world (for chrome.*).
-    try {
-      await chrome.scripting.executeScript({ target: { tabId }, files: ["dist/rrweb-recorder.js"], world: "MAIN" });
-      await chrome.scripting.executeScript({ target: { tabId }, files: ["dist/rrweb-relay.js"] });
-      await chrome.tabs.sendMessage(tabId, { action: "oj-rrweb-start" });
-    } catch (err) {
-      pushEvent({
-        t: Date.now(),
-        kind: KIND.LOG,
-        level: "warning",
-        title: "Session replay unavailable on this page",
-        detail: { message: String(err) },
-      });
-    }
+    await tell(tabId, "oj-rrweb-start");
+  } catch (err) {
+    pushEvent({ t: Date.now(), kind: KIND.LOG, level: "warning", title: "Session replay unavailable on this page", detail: { message: String(err) } });
   }
 }
 
@@ -353,9 +172,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sendResponse(accept ? { ok: true } : { stop: true });
     return;
   }
+  if (msg.type === "oj-page-batch") {
+    // Page-probe records. Only a lane that armed a probe accepts them.
+    let accept = session.recording && sender.tab && sender.tab.id === session.tabId;
+    if (accept) {
+      try {
+        accept = session.lane.handleBatch(JSON.parse(msg.eventsJson));
+      } catch (err) {
+        console.warn("OpenJam: dropped an unparseable probe batch", err);
+      }
+    }
+    sendResponse(accept ? { ok: true } : { stop: true });
+    return;
+  }
   if (msg.type === "oj-rrweb-hello") {
-    // A page (re)loaded; tell its recorder to resume if we're mid-recording.
-    sendResponse({ record: session.recording && sender.tab && sender.tab.id === session.tabId });
+    // A page (re)loaded; tell its recorder to resume if we're mid-recording, and
+    // let the lane (re)arm whatever page-side capture it owns.
+    const ours = session.recording && sender.tab && sender.tab.id === session.tabId;
+    sendResponse({ record: ours, probe: ours && session.lane.pageHello(sender.tab.id) });
     return;
   }
 });
@@ -379,12 +213,43 @@ async function recordableTabError(tabId) {
   return "OpenJam can only record normal web pages, not browser or extension pages. Switch to the tab you want to record, then press Start.";
 }
 
+// chrome.debugger.attach vets EVERY frame in the tab, not just the page URL
+// (chromium: debugger_api.cc, ExtensionMayAttachToRenderFrameHost). One iframe
+// from another extension — a password manager's inline menu, a grammar checker,
+// a shopping assistant — makes the whole tab unattachable, while tabs.get still
+// reports a normal https URL so recordableTabError() lets it through (#48).
+// Chrome's message is the only signal; it decides blame, not the fallback.
+const FOREIGN_EXTENSION_FRAME = /chrome-extension:\/\/ URL of different extension/;
+
+// The ids of other extensions with frames in the tab, best effort: frames
+// inside closed shadow roots stay invisible and the list comes back empty.
+async function scanForeignFrames(tabId) {
+  try {
+    const results = await chrome.scripting.executeScript({ target: { tabId, allFrames: true }, func: listExtensionFrameSrcs });
+    return foreignExtensionIds((results || []).flatMap((r) => (r && r.result) || []), chrome.runtime.id);
+  } catch {
+    return [];
+  }
+}
+
+// What the user sees in the popup and at the top of the timeline when the
+// session runs on the inject lane. blockedBy is null when the attach failed for
+// a reason other than a foreign frame: then the cause is Chrome's own message.
+const REDUCED_MODE_LOSSES =
+  "Replay, console, fetch/XHR calls and screenshots of this tab still work; other requests and full-page screenshots are not captured. ";
+function reducedCaptureWarning(blockedBy, attachError) {
+  if (blockedBy) {
+    const who = blockedBy.length ? "extension " + blockedBy.join(", ") : "another extension";
+    return "Recording in reduced mode: " + who + " has content in this page and Chrome blocks its debugger. " + REDUCED_MODE_LOSSES + "Disable that extension on this site for full capture.";
+  }
+  return "Recording in reduced mode: Chrome's debugger could not attach (" + attachError + "). " + REDUCED_MODE_LOSSES + "Fix the cause and record again for full capture.";
+}
+
 async function startRecording(tabId) {
   if (session.recording) return { ok: false, error: "Already recording." };
   const guard = await recordableTabError(tabId);
   if (guard) return { ok: false, error: guard };
   Object.assign(session, {
-    recording: true,
     stopping: false,
     tabId,
     startWall: Date.now(),
@@ -396,74 +261,76 @@ async function startRecording(tabId) {
     device: null,
     lastErrorShot: 0,
     audioActive: false,
+    lane: idleLane,
   });
+  setRecording(true);
 
+  // Any attach failure falls back to the inject lane: a reduced recording that
+  // names its cause beats no recording. The foreign-frame case additionally
+  // names the extension so the popup can offer a way to it.
+  let lane = cdpLane;
+  let blockedBy = null;
+  let attachError = null;
   try {
-    await chrome.debugger.attach({ tabId }, PROTOCOL_VERSION);
+    await cdpLane.attach(tabId);
   } catch (err) {
-    session.recording = false;
-    return { ok: false, error: "Could not attach debugger: " + String(err) };
+    lane = injectLane;
+    attachError = String(err && err.message ? err.message : err);
+    if (FOREIGN_EXTENSION_FRAME.test(attachError)) blockedBy = await scanForeignFrames(tabId);
   }
+  if (!session.recording || session.stopping) {
+    // A stop (or tab close) landed while we were attaching; that path has
+    // already finalized the session. Don't start a lane on top of it.
+    await lane.stop(tabId);
+    return { ok: false, error: "Recording was stopped before it started." };
+  }
+  session.lane = lane;
+  const warning = lane === injectLane ? reducedCaptureWarning(blockedBy, attachError) : null;
+  if (warning) pushEvent({ t: Date.now(), kind: KIND.LOG, level: "warning", title: warning, detail: { message: warning, blockedBy, attachError } });
+  await session.lane.start(tabId);
 
-  await sendCmd("Network.enable", {});
-  await sendCmd("Runtime.enable", {});
-  await sendCmd("Log.enable", {});
-  await sendCmd("Page.enable", {});
-
-  await captureDeviceInfo();
-  await captureScreenshot("Recording started");
+  await session.lane.deviceInfo(tabId);
+  await session.lane.screenshot("Recording started");
   await startReplayRecorder(tabId);
   await startAudioRecorder();
-  return { ok: true };
+  return warning ? { ok: true, warning, blockedBy } : { ok: true };
 }
 
 async function stopRecording() {
   if (!session.recording || session.stopping) return { ok: false, error: "Not recording." };
   session.stopping = true;
-  await captureScreenshot("Recording stopped");
-  const tabId = session.tabId;
-
-  try {
-    await chrome.tabs.sendMessage(tabId, { action: "oj-rrweb-stop" });
-  } catch {
-    // recorder absent on this page — already logged at start
-  }
-
-  // Give in-flight body fetches and the recorder's final batch a moment to land.
-  // recording stays true until after the wait so the final rrweb batch is accepted.
-  await new Promise((resolve) => setTimeout(resolve, 400));
-  session.recording = false;
-
-  try {
-    await chrome.debugger.detach({ tabId });
-  } catch {
-    // already detached — fine.
-  }
-
-  const audio = await stopAudioRecorder();
-  return finalizeRecording({ audio });
+  await session.lane.screenshot("Recording stopped");
+  return endSession();
 }
 
 // The debugger can detach without us asking: the user clicks "Cancel" on
 // Chrome's "being debugged" banner, or the recorded tab closes. CDP is already
-// gone (so we can't screenshot or detach), but every event captured so far is
-// still in the session — salvage it into a report instead of throwing the whole
+// gone (so we can't screenshot), but every event captured so far is still in
+// the session — salvage it into a report instead of throwing the whole
 // recording away (#19). The stopping flag dedupes against a racing stop click or
 // a second detach/remove event for the same teardown.
 async function salvageRecording(note) {
   if (!session.recording || session.stopping) return;
   session.stopping = true;
+  await endSession({ note });
+}
+
+// Shared tail of a clean stop and a salvage. One stop message: the relay
+// disarms and flushes both the recorder and (if armed) the probe. recording
+// stays true across the grace window so those final batches, and in-flight
+// body fetches, are still accepted.
+async function endSession({ note } = {}) {
+  const tabId = session.tabId;
   try {
-    await chrome.tabs.sendMessage(session.tabId, { action: "oj-rrweb-stop" });
+    await chrome.tabs.sendMessage(tabId, { action: "oj-rrweb-stop" });
   } catch {
-    // recorder absent or tab already gone — nothing left to stop.
+    // content scripts absent or tab already gone — nothing left to stop.
   }
-  // Keep recording=true across the grace window so the recorder's final batch is
-  // still accepted, then close the session and persist what we have.
   await new Promise((resolve) => setTimeout(resolve, 400));
-  session.recording = false;
+  setRecording(false);
+  await session.lane.stop(tabId);
   const audio = await stopAudioRecorder();
-  await finalizeRecording({ note, audio });
+  return finalizeRecording({ note, audio });
 }
 
 // Build the report from the current session and open the viewer. Shared by the
@@ -479,6 +346,7 @@ async function finalizeRecording({ note, audio } = {}) {
       version: chrome.runtime.getManifest().version,
       capturedAt: session.startWall,
       durationMs: Date.now() - session.startWall,
+      capture: session.lane.name,
       pageUrl: session.device && session.device.url,
       pageTitle: session.device && session.device.title,
       eventCount: session.events.length,
@@ -499,6 +367,7 @@ async function finalizeRecording({ note, audio } = {}) {
     await saveReport(key, report);
   } finally {
     session.stopping = false;
+    session.lane = idleLane;
   }
   await chrome.tabs.create({ url: chrome.runtime.getURL("viewer.html?key=" + encodeURIComponent(key)) });
   return { ok: true, eventCount: report.events.length };
@@ -563,7 +432,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   salvageRecording("Recording ended early: the recorded tab was closed. Saved everything captured up to this point.").catch(() => {});
 });
 
-chrome.debugger.onEvent.addListener(onDebuggerEvent);
+chrome.debugger.onEvent.addListener((source, method, params) => cdpLane.onDebuggerEvent(source, method, params));
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type) return; // content-script messages are handled by the listener above
@@ -575,6 +444,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           recording: session.recording,
           eventCount: session.events.length,
           tabId: session.tabId,
+          capture: session.lane.name,
         });
         break;
       case "start": {
@@ -592,7 +462,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         sendResponse(await stopRecording());
         break;
       case "screenshot":
-        await captureScreenshot(msg.label || "Manual screenshot");
+        await session.lane.screenshot(msg.label || "Manual screenshot");
         sendResponse({ ok: true, eventCount: session.events.length });
         break;
       default:

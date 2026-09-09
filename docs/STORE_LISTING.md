@@ -93,7 +93,7 @@ A session replay with screenshots routinely exceeds the default ~10 MB local-sto
 
 **scripting**
 ```
-Injects OpenJam's rrweb replay recorder into the recorded tab (when the content script isn't already present, e.g. after the extension reloads) to capture the DOM and its mutations for playback. Only on the tab the user chose to record.
+Injects OpenJam's rrweb replay recorder into the recorded tab (when the content script isn't already present, e.g. after the extension reloads) to capture the DOM and its mutations for playback. When the debugger cannot attach (for example another extension has an iframe in the page), it also injects a small page probe into that same tab that reports console output, uncaught errors and fetch/XHR calls, and it reads the page's frame URLs to tell the user which extension is blocking. Only on the tab the user chose to record, only while recording.
 ```
 
 **offscreen**

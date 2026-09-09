@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "OpenJam e2e: foreign iframe extension",
+  "version": "0.0.1",
+  "description": "Test fixture. Injects one of its own chrome-extension:// pages as an iframe into every web page, the way password managers and grammar checkers do. Reproduces issue #48.",
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "frame.html"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ],
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArmXUiLRfWbDawF1hyIe9assAZhm+MJ9R7JaSk23Ob9cGV+IIMLRwZdA0/5uo6zANmEXgiwr1FmUQyO9NCkYd2Gkn8C51fvDliqPoSdpZUYfQdazd0SHNn5LVipDZzMQfQUMPyJnITe9dtl+RyjNDx++VEKEaOe17RfRySeXZAnQBc/Iq91nD5HOxo5/kLebfU2B6usdnOdixgn654wJSMXSF0j1UgBuZL0GGfgPRJmkmYOOfXub4ijCH5Q86AT7xDAT8Lyjv06C9GNCMgRk/3oNuZjd3rEs/9nD/U2nTI5iYBUvoD+fgQKUMIzEGV/H7e52p22AUYQYZxV0QAb5I4QIDAQAB"
+}

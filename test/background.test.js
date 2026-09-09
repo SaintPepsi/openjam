@@ -7,6 +7,12 @@ import { test, expect } from "bun:test";
 
 const store = {};
 const tabUrlById = {}; // per-test overrides for chrome.tabs.get(id).url
+let attachFailure = null; // per-test: chrome.debugger.attach throws this
+let attachDelayMs = 0; // per-test: how long chrome.debugger.attach takes
+let frameSrcs = []; // per-test: what the foreign-frame scan finds in the page
+let captureVisibleTabCalls = 0;
+let pageGlobals = null; // per-test override of what Runtime.evaluate sees as the page
+const executedScripts = []; // {tabId, files, world}
 let storageSetFailures = 0;
 const createdTabs = [];
 const tabMessages = [];
@@ -15,20 +21,23 @@ const debuggerDetachListeners = [];
 
 globalThis.chrome = {
   debugger: {
-    attach: async () => {},
+    attach: async () => {
+      if (attachDelayMs) await new Promise((r) => setTimeout(r, attachDelayMs));
+      if (attachFailure) throw attachFailure;
+    },
     detach: async () => {},
-    sendCommand: async (_target, method) => {
+    sendCommand: async (_target, method, params) => {
       if (method === "Runtime.evaluate") {
-        return {
-          result: {
-            value: JSON.stringify({
-              userAgent: "test",
-              url: "https://example.test/app",
-              title: "Test page",
-              viewport: { width: 100, height: 100 },
-            }),
-          },
-        };
+        // Really evaluate the expression against stub page globals, like Chrome
+        // would: a throw inside the page comes back as exceptionDetails on a
+        // RESOLVED result, never as a rejection.
+        const g = pageGlobals ?? defaultPageGlobals();
+        try {
+          const value = new Function(...Object.keys(g), "return " + params.expression)(...Object.values(g));
+          return { result: { value } };
+        } catch (err) {
+          return { result: { type: "object", subtype: "error" }, exceptionDetails: { text: "Uncaught", exception: { description: String(err) } } };
+        }
       }
       if (method === "Page.captureScreenshot") return { data: "QUJD" };
       return {};
@@ -42,10 +51,15 @@ globalThis.chrome = {
   },
   tabs: {
     query: async () => [{ id: 1 }],
-    get: async (id) => ({ id, url: tabUrlById[id] ?? "https://example.test/app" }),
+    get: async (id) => ({ id, url: tabUrlById[id] ?? "https://example.test/app", active: true, windowId: 1 }),
     sendMessage: async (tabId, msg) => {
       tabMessages.push({ tabId, msg });
+      if (msg.action === "oj-device-info") return { userAgent: "probe-ua", url: "https://example.test/app", title: "Test page" };
       return { ok: true };
+    },
+    captureVisibleTab: async () => {
+      captureVisibleTabCalls++;
+      return "data:image/png;base64,AA==";
     },
     create: async (opts) => {
       createdTabs.push(opts.url);
@@ -67,8 +81,15 @@ globalThis.chrome = {
       },
     },
   },
-  scripting: { executeScript: async () => {} },
+  scripting: {
+    executeScript: async (opts) => {
+      if (opts.func) return [{ result: frameSrcs }];
+      executedScripts.push({ tabId: opts.target.tabId, files: opts.files, world: opts.world ?? "ISOLATED" });
+    },
+  },
   runtime: {
+    id: "own",
+    getPlatformInfo: (cb) => cb({ os: "test" }),
     getManifest: () => ({ version: "0.2.0" }),
     getURL: (p) => "chrome-extension://test/" + p,
     onMessage: {
@@ -78,6 +99,17 @@ globalThis.chrome = {
     },
   },
 };
+
+function defaultPageGlobals() {
+  return {
+    navigator: { userAgent: "test", platform: "t", language: "en", languages: ["en"], vendor: "", cookieEnabled: true, onLine: true },
+    location: { href: "https://example.test/app" },
+    document: { referrer: "", title: "Test page" },
+    window: { innerWidth: 100, innerHeight: 100, devicePixelRatio: 1 },
+    screen: { width: 100, height: 100, colorDepth: 24 },
+    performance: {},
+  };
+}
 
 function dispatch(msg, sender = {}) {
   return new Promise((resolve) => {
@@ -201,6 +233,114 @@ test("concurrent stop clicks produce one report and one viewer tab", async () =>
   expect(createdTabs.length).toBe(1);
 });
 
+test("a foreign extension's iframe switches the session to the inject lane instead of failing (#48)", async () => {
+  // The tab URL is a plain https page, so the pre-attach guard passes; Chrome
+  // then rejects the attach because another extension owns one of its frames.
+  // Disconfirming inputs: (a) change the thrown message to any other CDP error →
+  // ok:false and no lane; (b) drop the probe-batch handler → no console event.
+  attachFailure = new Error("Cannot access a chrome-extension:// URL of different extension");
+  frameSrcs = ["chrome-extension://aaaa/menu.html", "chrome-extension://own/x.html"];
+  tabMessages.length = 0;
+  const started = await dispatch({ action: "start", tabId: 7 });
+  attachFailure = null;
+  expect(started.ok).toBe(true);
+  expect(started.blockedBy).toEqual(["aaaa"]);
+  expect(started.warning).toMatch(/reduced mode: extension aaaa/);
+  expect((await dispatch({ action: "getStatus" })).capture).toBe("inject");
+  // the lane armed the probe, asked the page for device info, and screenshotted via captureVisibleTab
+  expect(tabMessages.map((m) => m.msg.action)).toEqual(expect.arrayContaining(["oj-probe-start", "oj-device-info", "oj-rrweb-start"]));
+  expect(captureVisibleTabCalls).toBe(1);
+  // The probe is not a manifest content script: this lane puts it into THIS tab
+  // now, and again into each document the tab navigates to (hello).
+  // Disconfirming: drop the injectProbe call in inject.start or in pageHello.
+  const probeInjections = () => executedScripts.filter((e) => e.files?.[0] === "dist/page-probe.js");
+  expect(probeInjections()).toEqual([{ tabId: 7, files: ["dist/page-probe.js"], world: "MAIN" }]);
+  // a reloaded page asks hello → resume the recorder, and put a fresh probe in
+  expect(await dispatch({ type: "oj-rrweb-hello" }, { tab: { id: 7 } })).toEqual({ record: true, probe: true });
+  expect(probeInjections()).toHaveLength(2);
+  // …but a hello from any other tab gets neither
+  expect(await dispatch({ type: "oj-rrweb-hello" }, { tab: { id: 8 } })).toEqual({ record: false, probe: false });
+  expect(probeInjections()).toHaveLength(2);
+
+  // probe records from the recorded tab land on the timeline with the CDP schema
+  const now = Date.now(); // report events sort by t; the warning was pushed at start
+  const records = [
+    { kind: "console", level: "log", t: now + 1, message: "counter is now 1", stack: [] },
+    { kind: "net-start", requestId: "f1", t: now + 2, method: "GET", url: "https://example.test/api", resourceType: "fetch", requestHeaders: {}, requestBody: null },
+    { kind: "net-end", requestId: "f1", t: now + 10, status: 200, statusText: "OK", mimeType: "application/json", responseHeaders: {}, durationMs: 9, encodedBytes: 2, responseBody: "{}", failed: false },
+    { kind: "error", t: now + 20, message: "Error: boom\n    at x", url: "https://example.test/app", line: 1, column: 1 },
+  ];
+  expect(await dispatch({ type: "oj-page-batch", eventsJson: JSON.stringify(records) }, { tab: { id: 7 } })).toEqual({ ok: true });
+  // …but not from another tab
+  expect(await dispatch({ type: "oj-page-batch", eventsJson: "[]" }, { tab: { id: 8 } })).toEqual({ stop: true });
+
+  tabMessages.length = 0;
+  await dispatch({ action: "stop" });
+  // One stop message; the relay fans it out to recorder and probe (test/relay.test.js).
+  expect(tabMessages.map((m) => m.msg.action)).toEqual(["oj-rrweb-stop"]);
+  const report = store[storedReports()[0]];
+  expect(report.meta.capture).toBe("inject");
+  expect(report.device.userAgent).toBe("probe-ua");
+  const kinds = report.events.map((e) => e.kind);
+  expect(kinds[0]).toBe("log"); // the reduced-mode warning leads the timeline
+  expect(report.events[0].detail.blockedBy).toEqual(["aaaa"]);
+  const net = report.events.find((e) => e.kind === "network");
+  expect(net.detail).toMatchObject({ method: "GET", status: 200, resourceType: "fetch", responseBody: "{}", durationMs: 9 });
+  expect(report.events.find((e) => e.kind === "console").title).toBe("counter is now 1");
+  expect(report.events.find((e) => e.kind === "error").title).toBe("Error: boom");
+  expect(report.events.filter((e) => e.kind === "screenshot").every((e) => e.detail.image === "data:image/png;base64,AA==")).toBe(true);
+  // on the cdp lane, probe batches are refused even from the recorded tab
+  frameSrcs = [];
+  expect((await dispatch({ action: "start", tabId: 7 })).ok).toBe(true);
+  expect(await dispatch({ type: "oj-page-batch", eventsJson: "[]" }, { tab: { id: 7 } })).toEqual({ stop: true });
+  await dispatch({ action: "stop" });
+});
+
+test("a foreign frame the scan cannot see still records, with an unnamed warning", async () => {
+  attachFailure = new Error("Cannot access a chrome-extension:// URL of different extension");
+  frameSrcs = [];
+  const started = await dispatch({ action: "start", tabId: 7 });
+  attachFailure = null;
+  expect(started).toMatchObject({ ok: true, blockedBy: [] });
+  expect(started.warning).toMatch(/reduced mode: another extension has content/);
+  await dispatch({ action: "stop" });
+});
+
+test("any other attach failure records on the inject lane and quotes Chrome's reason", async () => {
+  // A reduced recording that says why beats a dead popup. No blockedBy: the
+  // popup gets no Manage button, the warning carries the raw message instead.
+  // Disconfirming: restore the `if (!FOREIGN_EXTENSION_FRAME.test(...)) return {ok:false}` branch.
+  attachFailure = new Error("Another debugger is already attached to the tab with id: 7.");
+  frameSrcs = ["chrome-extension://aaaa/menu.html"]; // present, but irrelevant to this cause
+  const res = await dispatch({ action: "start", tabId: 7 });
+  attachFailure = null;
+  expect(res).toEqual({
+    ok: true,
+    blockedBy: null,
+    warning: expect.stringMatching(/^Recording in reduced mode: Chrome's debugger could not attach \(Another debugger is already attached to the tab with id: 7\.\)\. Replay/),
+  });
+  expect(res.warning).not.toMatch(/extension aaaa/);
+  expect((await dispatch({ action: "getStatus" })).capture).toBe("inject");
+  await dispatch({ action: "stop" });
+  const report = store[storedReports().at(-1)];
+  expect(report.meta.capture).toBe("inject");
+  expect(report.events[0]).toMatchObject({ kind: "log", level: "warning", detail: { blockedBy: null, attachError: "Another debugger is already attached to the tab with id: 7." } });
+  frameSrcs = [];
+});
+
+test("a session records on the cdp lane and the report says so (meta.capture)", async () => {
+  // session.lane.name is THE signal for which lane a recording runs on; every
+  // consumer (viewer badge, manifest doc, degraded warning) reads it from meta.
+  // Disconfirming: drop the `capture: session.lane.name` copy in finalizeRecording.
+  expect((await dispatch({ action: "start", tabId: 1 })).ok).toBe(true);
+  expect((await dispatch({ action: "getStatus" })).capture).toBe("cdp");
+  await dispatch({ action: "stop" });
+  const report = store[storedReports()[0]];
+  expect(report.meta.capture).toBe("cdp");
+  expect(report.device.userAgent).toBe("test");
+  expect((await dispatch({ action: "getStatus" })).capture).toBeNull(); // idle again: no lane
+});
+
 test("refuses non-recordable tabs with actionable advice, not a raw CDP error", async () => {
   // chrome.debugger can't attach to another extension's page; without the guard
   // the worker leaks Chrome's "Cannot access a chrome-extension:// URL of
@@ -212,4 +352,43 @@ test("refuses non-recordable tabs with actionable advice, not a raw CDP error", 
   expect(res.error).not.toMatch(/debugger|chrome-extension/);
   expect((await dispatch({ action: "getStatus" })).recording).toBe(false);
   delete tabUrlById[7];
+});
+
+test("stop during the attach window records the missed screenshot instead of wedging the session", async () => {
+  // Stop arrives while chrome.debugger.attach is still pending: no lane yet.
+  // Before the fix captureScreenshot threw on session.lane.screenshot, the
+  // rejection escaped stopRecording, and every later start answered "Already
+  // recording." Disconfirming: revert captureScreenshot to `session.lane.screenshot(label)`.
+  attachDelayMs = 50;
+  const starting = dispatch({ action: "start", tabId: 7 });
+  await new Promise((r) => setTimeout(r, 5));
+  expect((await dispatch({ action: "getStatus" })).recording).toBe(true);
+  const stopped = await dispatch({ action: "stop" });
+  const started = await starting;
+  attachDelayMs = 0;
+  expect(stopped.ok).toBe(true);
+  expect(started).toEqual({ ok: false, error: "Recording was stopped before it started." });
+  const report = store[storedReports().at(-1)];
+  expect(report.events.find((e) => e.kind === "screenshot")).toMatchObject({ title: "Recording stopped (failed)", detail: { error: "no capture lane active" } });
+  // and the session is usable again
+  expect((await dispatch({ action: "getStatus" })).recording).toBe(false);
+  expect((await dispatch({ action: "start", tabId: 7 })).ok).toBe(true);
+  await dispatch({ action: "stop" });
+});
+
+test("a page that throws inside the device probe yields device.error, not a crash or a bogus object", async () => {
+  // Fingerprint blockers replace navigator getters with throwing ones. CDP
+  // reports that as exceptionDetails on a resolved Runtime.evaluate result.
+  // Disconfirming: remove the exceptionDetails check in cdp.captureDeviceInfo →
+  // device becomes undefined and the assertion below fails.
+  pageGlobals = { ...defaultPageGlobals(), navigator: { get userAgent() { throw new Error("blocked"); } } };
+  expect((await dispatch({ action: "start", tabId: 7 })).ok).toBe(true);
+  await dispatch({ action: "stop" });
+  pageGlobals = null;
+  const report = store[storedReports().at(-1)];
+  expect(report.device).toEqual({ error: expect.stringMatching(/Uncaught|blocked/) });
+  // and the happy path really evaluates collectDeviceInfo's source in the page
+  expect((await dispatch({ action: "start", tabId: 7 })).ok).toBe(true);
+  await dispatch({ action: "stop" });
+  expect(store[storedReports().at(-1)].device).toMatchObject({ userAgent: "test", title: "Test page", screen: { colorDepth: 24 } });
 });

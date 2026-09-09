@@ -6,17 +6,57 @@
 // chrome.runtime.sendMessage and relays start/stop commands back to the
 // recorder over window.postMessage. Bundled by build.mjs into
 // dist/rrweb-relay.js.
-const TO_RELAY = "oj-rec-to-relay"; // envelope tag for messages from the recorder
-const FROM_RELAY = "oj-relay-to-rec"; // envelope tag for messages to the recorder
+import { collectDeviceInfo } from "./device-info.js";
+import { TO_RELAY, FROM_RELAY, RECORDER_FLUSH_EVENT, PROBE_FLUSH_EVENT } from "./wire.js";
 
 function main() {
   // Whether the background wants this page recorded. Tracked so a recorder that
   // announces "ready" after we already know (e.g. it loaded second, or resumed
   // after navigation) gets told to start.
   let recording = false;
+  // Whether the background wants the page probe (inject lane) armed. Same
+  // ready/start handshake as the recorder, so load order never matters.
+  let probe = false;
 
   function toRecorder(kind) {
     window.postMessage({ __oj: FROM_RELAY, kind }, "*");
+  }
+
+  // The session is over: disarm both producers. Sent for a stop, and when the
+  // background refuses a batch (the session ended without this page being told,
+  // e.g. debug banner dismissed).
+  function stopAll() {
+    recording = false;
+    probe = false;
+    toRecorder("stop");
+    toRecorder("probe-stop");
+  }
+
+  // Forward a batch as the JSON string the producer made. The verified cliff is
+  // chrome.storage.local.set, not this sendMessage hop — isolation testing showed
+  // the MV3 structured clone carries a deep array through sendMessage intact.
+  // Parsing here would just break the one-string-contract-everywhere
+  // defense-in-depth, so keep it a string regardless.
+  function forwarder(type) {
+    return (eventsJson) => {
+      try {
+        chrome.runtime.sendMessage({ type, eventsJson }, (res) => {
+          if (chrome.runtime.lastError) return;
+          if (res && res.stop) stopAll();
+        });
+      } catch {
+        // extension reloaded mid-recording — nothing useful to do
+      }
+    };
+  }
+  const forwardRecorderBatch = forwarder("oj-rrweb-batch");
+  const forwardProbeBatch = forwarder("oj-page-batch");
+
+  // The synchronous pagehide hop (see src/wire.js).
+  for (const [event, forward] of [[RECORDER_FLUSH_EVENT, forwardRecorderBatch], [PROBE_FLUSH_EVENT, forwardProbeBatch]]) {
+    document.addEventListener(event, (e) => {
+      if (typeof e.detail === "string") forward(e.detail);
+    });
   }
 
   // Recorder → background.
@@ -24,26 +64,13 @@ function main() {
     if (e.source !== window || !e.data || e.data.__oj !== TO_RELAY) return;
     const msg = e.data;
     if (msg.kind === "batch") {
-      try {
-        // Forward the batch as the JSON string the recorder produced. The verified
-        // cliff is chrome.storage.local.set, not this sendMessage hop — isolation
-        // testing showed the MV3 structured clone carries a deep array through
-        // sendMessage intact. Parsing here would just break the one-string-
-        // contract-everywhere defense-in-depth, so keep it a string regardless.
-        chrome.runtime.sendMessage({ type: "oj-rrweb-batch", eventsJson: msg.eventsJson }, (res) => {
-          if (chrome.runtime.lastError) return;
-          // {stop:true}: the session ended without the recorder being told
-          // (e.g. debug banner dismissed) — stop serializing the page.
-          if (res && res.stop) {
-            recording = false;
-            toRecorder("stop");
-          }
-        });
-      } catch {
-        // extension reloaded mid-recording — nothing useful to do
-      }
+      forwardRecorderBatch(msg.eventsJson);
     } else if (msg.kind === "ready" && recording) {
       toRecorder("start");
+    } else if (msg.kind === "probe-batch") {
+      forwardProbeBatch(msg.eventsJson);
+    } else if (msg.kind === "probe-ready" && probe) {
+      toRecorder("probe-start");
     }
   });
 
@@ -54,9 +81,14 @@ function main() {
       toRecorder("start");
       sendResponse({ ok: true });
     } else if (msg.action === "oj-rrweb-stop") {
-      recording = false;
-      toRecorder("stop");
+      stopAll();
       sendResponse({ ok: true });
+    } else if (msg.action === "oj-probe-start") {
+      probe = true;
+      toRecorder("probe-start");
+      sendResponse({ ok: true });
+    } else if (msg.action === "oj-device-info") {
+      sendResponse(collectDeviceInfo());
     }
   });
 
@@ -68,6 +100,10 @@ function main() {
       if (res && res.record) {
         recording = true;
         toRecorder("start");
+      }
+      if (res && res.probe) {
+        probe = true;
+        toRecorder("probe-start");
       }
     });
   } catch {

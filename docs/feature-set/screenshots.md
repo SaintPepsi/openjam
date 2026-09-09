@@ -17,6 +17,10 @@ see the visual state at the moment something failed.
 
 - Screenshots are bitmaps embedded in the report — unlike the [session replay](session-replay.md)
   (reconstructed DOM), they are exact pixels of what was on screen.
+- In [reduced mode](data-capture.md#when-chromes-debugger-is-unavailable-reduced-mode) (no
+  debugger) screenshots come from `chrome.tabs.captureVisibleTab`: the visible viewport of
+  the recorded tab, and only while that tab is the active one in its window. A screenshot
+  that could not be taken is recorded on the timeline as `… (failed)` with the reason.
 
 ## Test data
 
