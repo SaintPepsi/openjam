@@ -2,6 +2,8 @@
 // manifest.json and the landing page (docs/index.html) so `npm version patch` bumps
 // all three in one commit and tag. GitHub Pages serves main:/docs, so the site
 // shows the new number as soon as the release commit lands on main.
+// npm skips this hook when ~/.npmrc has ignore-scripts=true, so use `npm run bump -- patch`
+// (forces --ignore-scripts=false). test/version-sync.test.js is the backstop.
 //
 // On the landing page only elements marked `data-version` are rewritten. Other
 // version strings are release notes ("Now with voice narration · v0.6.0") and

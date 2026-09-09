@@ -152,8 +152,11 @@ https.request("https://oauth2.googleapis.com/token",{method:"POST",headers:{"Con
    page, `docs/index.html`, so GitHub Pages shows the release once pushed):
    ```sh
    git checkout main && git pull
-   npm version patch   # or minor / major
+   npm run bump -- patch   # or minor / major
    ```
+   `npm run bump` is `npm version` with the `version` hook force-enabled. Plain
+   `npm version patch` skips the hook when `~/.npmrc` has `ignore-scripts=true`
+   and tags a stale `manifest.json`. Check: `git show --stat HEAD` lists it.
 2. Push the commit and the tag; the tag triggers the release workflow:
    ```sh
    git push --follow-tags

@@ -92,8 +92,9 @@ for (const name of ["rrweb-recorder", "page-probe", "rrweb-relay"]) {
 //  1. Upstream bug (#43): for an <img> with both srcset and rr_dataURL, the "back up
 //     the srcset" branch matches EVERY attribute name, so alt/class/style/id are
 //     swallowed and the image replays unstyled at natural size. Fix: `name === "srcset"`.
-//     Still on rrweb master (rebuild.ts, "backup original img srcset"). Delete this
-//     half once @rrweb/replay ships the fix; the match guard below will say so.
+//     Upstream: https://github.com/rrweb-io/rrweb/issues/1937, fix PR
+//     https://github.com/rrweb-io/rrweb/pull/1938. Delete this half once @rrweb/replay
+//     ships the fix; the match guard below will say so.
 //  2. OpenJam divergence, keep even after 1 is upstreamed: `src` also goes to the
 //     backup branch, so an http URL or a data: placeholder never lands on the replay
 //     element and rrweb's rr_dataURL branch (which records rrweb-original-src) stays
