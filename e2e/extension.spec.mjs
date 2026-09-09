@@ -52,13 +52,12 @@ async function recordSession({ injectStyle = false, blobImage = false, lateBlobI
     // image in srcset, plus the inline style that positions it. Present at snapshot
     // time and already decoded, so rrweb's inlineImages captures the pixels the
     // browser chose (the srcset candidate) as rr_dataURL — the combination that
-    // trips the rebuild bug (#43). Wrapped so the test can locate it even when the
-    // bug strips the img's id.
+    // trips the rebuild bug (#43). Wrapped so the locator survives the bug stripping
+    // every attribute off the img.
     await fixture.evaluate(async ({ src, placeholder }) => {
       const wrap = document.createElement("div");
       wrap.id = "srcsetwrap";
       const img = document.createElement("img");
-      img.id = "srcset-img";
       img.alt = "srcset-img";
       img.className = "srcset-img";
       img.setAttribute("style", "display:block;width:40px;height:40px");
@@ -432,11 +431,11 @@ test("replay keeps every attribute on an inlined <img> that has a srcset (#43)",
   await expect(img).toHaveAttribute("alt", "srcset-img");
   await expect(img).toContainClass("srcset-img");
   // offsetWidth is layout size inside the iframe, unaffected by the stage's
-  // fit-to-width transform (boundingBox would report the scaled value).
-  expect(await img.evaluate((el) => [el.offsetWidth, el.offsetHeight])).toEqual([40, 40]); // inline style survived
-  // What renders is the recorder's inlined capture (webp, REPLAY_DESIGN.md §4), not
-  // the placeholder src and not a srcset fetch.
-  expect(await img.evaluate((el) => el.currentSrc.slice(0, 16))).toBe("data:image/webp;");
+  // fit-to-width transform (boundingBox would report the scaled value). currentSrc
+  // is the recorder's inlined capture (webp, REPLAY_DESIGN.md §4), not the
+  // placeholder src and not a srcset fetch: that guards build.mjs's `src` clause.
+  const info = await img.evaluate((el) => ({ w: el.offsetWidth, h: el.offsetHeight, src: el.currentSrc.slice(0, 16) }));
+  expect(info).toEqual({ w: 40, h: 40, src: "data:image/webp;" });
 
   await viewer.close();
   await popup.close();
