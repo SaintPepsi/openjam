@@ -36,12 +36,44 @@ test.afterAll(async () => {
 // only that the <img> is sourced from a blob: object URL (like Atlassian Media).
 const TINY_PNG =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+// A 1x1 GIF, distinguishable from TINY_PNG by MIME type: stands in for the LQIP
+// placeholder an image pipeline puts in `src` while the real image sits in srcset.
+const TINY_GIF = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
 
 // Records the fixture with console + network + screenshot activity and
 // resolves with the viewer page. Used by the first three tests.
-async function recordSession({ injectStyle = false, blobImage = false, lateBlobImage = false, deepDom = false } = {}) {
+async function recordSession({ injectStyle = false, blobImage = false, lateBlobImage = false, deepDom = false, srcsetImage = false } = {}) {
   const fixture = await context.newPage();
   await fixture.goto(fixtureServer.url, { waitUntil: "load" });
+
+  if (srcsetImage) {
+    // A responsive image the way an LQIP-then-srcset pipeline (lazysizes, Next.js
+    // <Image placeholder="blur">) emits it: a data: placeholder in src, the real
+    // image in srcset, plus the inline style that positions it. Present at snapshot
+    // time and already decoded, so rrweb's inlineImages captures the pixels the
+    // browser chose (the srcset candidate) as rr_dataURL — the combination that
+    // trips the rebuild bug (#43). Wrapped so the test can locate it even when the
+    // bug strips the img's id.
+    await fixture.evaluate(async ({ src, placeholder }) => {
+      const wrap = document.createElement("div");
+      wrap.id = "srcsetwrap";
+      const img = document.createElement("img");
+      img.id = "srcset-img";
+      img.alt = "srcset-img";
+      img.className = "srcset-img";
+      img.setAttribute("style", "display:block;width:40px;height:40px");
+      img.srcset = `${src} 1x`;
+      img.src = placeholder;
+      wrap.appendChild(img);
+      document.body.appendChild(wrap);
+      if (!(img.complete && img.naturalWidth > 0)) {
+        await new Promise((res) => {
+          img.onload = res;
+          img.onerror = res;
+        });
+      }
+    }, { src: TINY_PNG, placeholder: TINY_GIF });
+  }
 
   if (deepDom) {
     // Build a deeply nested DOM chain (~60 divs) ending in a marked leaf, present
@@ -380,6 +412,34 @@ test("exported report inlines blob: images that appear mid-recording", async () 
   await viewer.close();
   await popup.close();
   fixtureServer = await serveFixture(); // restore for later serial tests
+});
+
+test("replay keeps every attribute on an inlined <img> that has a srcset (#43)", async () => {
+  // rrweb-snapshot's rebuild has an upstream bug: for an <img> with srcset AND
+  // rr_dataURL, the "back up the srcset" branch matches every attribute name, so
+  // alt/class/style/id are all dropped and the image replays unstyled at natural
+  // size. build.mjs patches the one condition into the bundled engine.
+  //
+  // Disconfirming input: drop `plugins: [patchRrwebSrcsetRebuild]` from the replay
+  // build in build.mjs, `node build.mjs`, rerun — fails on the alt assertion:
+  // Expected "srcset-img", Received "". (The currentSrc assertion is user-visible
+  // but not disconfirming: under the bug rr_dataURL still lands on src.)
+  const { viewer, popup } = await recordSession({ srcsetImage: true });
+
+  await viewer.locator("#replay .replayer-wrapper").waitFor();
+  const img = viewer.frameLocator("#replay .replayer-wrapper iframe").locator("#srcsetwrap img");
+  await img.waitFor();
+  await expect(img).toHaveAttribute("alt", "srcset-img");
+  await expect(img).toContainClass("srcset-img");
+  // offsetWidth is layout size inside the iframe, unaffected by the stage's
+  // fit-to-width transform (boundingBox would report the scaled value).
+  expect(await img.evaluate((el) => [el.offsetWidth, el.offsetHeight])).toEqual([40, 40]); // inline style survived
+  // What renders is the recorder's inlined capture (webp, REPLAY_DESIGN.md §4), not
+  // the placeholder src and not a srcset fetch.
+  expect(await img.evaluate((el) => el.currentSrc.slice(0, 16))).toBe("data:image/webp;");
+
+  await viewer.close();
+  await popup.close();
 });
 
 test("deep DOM survives the extension messaging depth limit", async () => {

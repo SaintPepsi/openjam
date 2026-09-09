@@ -87,6 +87,37 @@ for (const name of ["rrweb-recorder", "page-probe", "rrweb-relay"]) {
   });
 }
 
+// rrweb-snapshot's rebuild (inlined into @rrweb/replay) has an upstream bug: for an
+// <img> that carries both srcset and rr_dataURL, the "back up the srcset" branch
+// matches EVERY attribute name, so alt/class/style/id are all swallowed and the
+// replayed image renders unstyled at natural size (#43, Next.js `fill` images).
+// Still present on rrweb master (rebuild.ts, "backup original img srcset"). Patch
+// the one condition at bundle time. `src` rides along in the backup branch: for a
+// srcset image the browser rendered a srcset candidate, so rr_dataURL is the real
+// pixels and src may be an http URL or a data: LQIP placeholder. Never setting it
+// means no http src ever lands on the replay element, and rrweb's own rr_dataURL
+// branch (which records rrweb-original-src) stays in charge. Defensive: Chromium
+// can populate currentSrc synchronously for a data: src, which would trip rrweb's
+// `!currentSrc.startsWith("data:")` gate; reproduced in isolation, not in the player.
+const RRWEB_SRCSET_BUG = 'tagName === "img" && n2.attributes.srcset && n2.attributes.rr_dataURL';
+const RRWEB_SRCSET_FIX = 'tagName === "img" && (name === "srcset" || name === "src") && n2.attributes.srcset && n2.attributes.rr_dataURL';
+// Two guards: exactly one match inside the file (an rrweb bump that reformats or
+// fixes the code fails the build), and exactly one patched file after the build
+// (a bump that moves the entry, e.g. to replay.mjs, would otherwise skip onLoad and
+// ship the bug silently).
+let rrwebSrcsetPatched = 0;
+const patchRrwebSrcsetRebuild = {
+  name: "patch-rrweb-srcset-rebuild",
+  setup(b) {
+    b.onLoad({ filter: /@rrweb[/\\]replay[/\\]dist[/\\]replay\.js$/ }, (args) => {
+      const parts = readFileSync(args.path, "utf8").split(RRWEB_SRCSET_BUG);
+      if (parts.length !== 2) throw new Error(`rrweb srcset rebuild patch: expected 1 match, found ${parts.length - 1} in ${args.path}`);
+      rrwebSrcsetPatched++;
+      return { contents: parts.join(RRWEB_SRCSET_FIX), loader: "js" };
+    });
+  },
+};
+
 await build({
   stdin: {
     contents: 'import { Replayer } from "@rrweb/replay";\nwindow.RRWebReplayer = Replayer;\n',
@@ -98,7 +129,9 @@ await build({
   minify: true,
   outfile: "dist/rrweb-replay.js",
   logLevel: "info",
+  plugins: [patchRrwebSrcsetRebuild],
 });
+if (rrwebSrcsetPatched !== 1) throw new Error(`rrweb srcset rebuild patch: applied to ${rrwebSrcsetPatched} files, expected 1 (did @rrweb/replay's entry move?)`);
 
 const engine = readFileSync("dist/rrweb-replay.js", "utf8");
 const engineCss = readFileSync("node_modules/@rrweb/replay/dist/style.min.css", "utf8");
