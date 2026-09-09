@@ -6,7 +6,7 @@
 # Store + Edge Add-ons via https://github.com/PlasmoHQ/bpp.
 #
 # Release flow (docs/RELEASING.md): on main,
-#   npm version patch && git push --follow-tags
+#   npm version patch --ignore-scripts=false && git push --follow-tags
 #
 # Store credentials (one-time, see issue #6): keys JSON format
 # https://github.com/PlasmoHQ/bms#submit-keysjson — Chrome

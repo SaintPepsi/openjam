@@ -151,8 +151,11 @@ https.request("https://oauth2.googleapis.com/token",{method:"POST",headers:{"Con
    `package.json` copies the new number into `manifest.json`):
    ```sh
    git checkout main && git pull
-   npm version patch   # or minor / major
+   npm version patch --ignore-scripts=false   # or minor / major
    ```
+   `--ignore-scripts=false` matters: a global `ignore-scripts=true` in `~/.npmrc`
+   silently skips the `version` hook, and the tag ships a stale `manifest.json`.
+   Check before pushing: `git show --stat HEAD` must list `manifest.json`.
 2. Push the commit and the tag; the tag triggers the release workflow:
    ```sh
    git push --follow-tags
