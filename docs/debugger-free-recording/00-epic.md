@@ -50,9 +50,10 @@ Reproduced with a fixture extension that injects its own iframe:
 - **Disarmed means free.** While not recording, a console call costs one boolean check and
   a fetch never has its body cloned (`isArmed()` gate in `src/page-probe/network.js`).
   `text/event-stream` bodies are never read on either lane (`src/capture-limits.js`).
-- **Other attach failures still abort** with the raw CDP error. Only the foreign-frame
-  message is a known, recoverable condition. Widening the fallback to every attach failure
-  is an open call for Ian, not decided here.
+- **Every attach failure falls back.** First shipped narrow (foreign-frame error only,
+  everything else aborted with the raw CDP error); widened on Ian's call because a reduced
+  recording that quotes the cause beats no recording. `blockedBy` stays `null` for
+  non-frame causes, so the popup shows the raw message and no Manage button.
 - **No frame eviction.** Removing another extension's iframe to sneak an attach through is
   possible and rude; not on the table.
 
@@ -70,7 +71,7 @@ and screenshots of anything but the visible viewport.
 | Popup gold notice + Manage button, pixel baseline, button survives the 1 s re-render and opens `chrome://extensions` | same spec, test 2 | rebuild the buttons unconditionally in `openjam-popup.js` `_render` |
 | Probe is not in bystander tabs | same spec, test 1 (`__ojProbeLoaded` check) | put `dist/page-probe.js` back in `manifest.json` |
 | Same page without the frame → cdp lane, no warning | same spec, test 3 | — (control) |
-| Lane selection, hello re-injection, flush order, stop-during-attach, device-info throw | `test/background.test.js` | listed per test |
+| Lane selection, fallback on any attach error, hello re-injection, flush order, stop-during-attach, device-info throw | `test/background.test.js` | listed per test |
 | Console/error/rejection records, disarmed cost, pagehide bridge | `test/page-probe.test.js`, `test/relay.test.js` | listed per test |
 | fetch/XHR records, body gating, event-stream, abort, no unhandled rejection | `test/page-probe-network.test.js` | listed per test |
 | Argument serialisation, surrogate-safe clip, stack frames | `test/page-probe-serialize.test.js` | listed per test |

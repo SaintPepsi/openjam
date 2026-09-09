@@ -309,13 +309,26 @@ test("a foreign frame the scan cannot see still records, with an unnamed warning
   await dispatch({ action: "stop" });
 });
 
-test("other attach failures keep the raw CDP error so the issue link carries it", async () => {
+test("any other attach failure records on the inject lane and quotes Chrome's reason", async () => {
+  // A reduced recording that says why beats a dead popup. No blockedBy: the
+  // popup gets no Manage button, the warning carries the raw message instead.
+  // Disconfirming: restore the `if (!FOREIGN_EXTENSION_FRAME.test(...)) return {ok:false}` branch.
   attachFailure = new Error("Another debugger is already attached to the tab with id: 7.");
+  frameSrcs = ["chrome-extension://aaaa/menu.html"]; // present, but irrelevant to this cause
   const res = await dispatch({ action: "start", tabId: 7 });
   attachFailure = null;
-  expect(res.ok).toBe(false);
-  expect(res.error).toBe("Could not attach debugger: Error: Another debugger is already attached to the tab with id: 7.");
-  expect((await dispatch({ action: "getStatus" })).recording).toBe(false);
+  expect(res).toEqual({
+    ok: true,
+    blockedBy: null,
+    warning: expect.stringMatching(/^Recording in reduced mode: Chrome's debugger could not attach \(Another debugger is already attached to the tab with id: 7\.\)\. Replay/),
+  });
+  expect(res.warning).not.toMatch(/extension aaaa/);
+  expect((await dispatch({ action: "getStatus" })).capture).toBe("inject");
+  await dispatch({ action: "stop" });
+  const report = store[storedReports().at(-1)];
+  expect(report.meta.capture).toBe("inject");
+  expect(report.events[0]).toMatchObject({ kind: "log", level: "warning", detail: { blockedBy: null, attachError: "Another debugger is already attached to the tab with id: 7." } });
+  frameSrcs = [];
 });
 
 test("a session records on the cdp lane and the report says so (meta.capture)", async () => {

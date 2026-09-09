@@ -236,13 +236,17 @@ async function scanForeignFrames(tabId) {
   }
 }
 
-function reducedCaptureWarning(blockedBy) {
-  const who = blockedBy.length ? "extension " + blockedBy.join(", ") : "another extension";
-  return (
-    "Recording in reduced mode: " + who + " has content in this page and Chrome blocks its debugger. " +
-    "Replay, console, fetch/XHR calls and screenshots of this tab still work; other requests and full-page screenshots are not captured. " +
-    "Disable that extension on this site for full capture."
-  );
+// What the user sees in the popup and at the top of the timeline when the
+// session runs on the inject lane. blockedBy is null when the attach failed for
+// a reason other than a foreign frame: then the cause is Chrome's own message.
+const REDUCED_MODE_LOSSES =
+  "Replay, console, fetch/XHR calls and screenshots of this tab still work; other requests and full-page screenshots are not captured. ";
+function reducedCaptureWarning(blockedBy, attachError) {
+  if (blockedBy) {
+    const who = blockedBy.length ? "extension " + blockedBy.join(", ") : "another extension";
+    return "Recording in reduced mode: " + who + " has content in this page and Chrome blocks its debugger. " + REDUCED_MODE_LOSSES + "Disable that extension on this site for full capture.";
+  }
+  return "Recording in reduced mode: Chrome's debugger could not attach (" + attachError + "). " + REDUCED_MODE_LOSSES + "Fix the cause and record again for full capture.";
 }
 
 async function startRecording(tabId) {
@@ -266,17 +270,18 @@ async function startRecording(tabId) {
     lane: null,
   });
 
+  // Any attach failure falls back to the inject lane: a reduced recording that
+  // names its cause beats no recording. The foreign-frame case additionally
+  // names the extension so the popup can offer a way to it.
   let lane = cdpLane;
   let blockedBy = null;
+  let attachError = null;
   try {
     await cdpLane.attach(tabId);
   } catch (err) {
-    if (!FOREIGN_EXTENSION_FRAME.test(String(err))) {
-      session.recording = false;
-      return { ok: false, error: "Could not attach debugger: " + String(err) };
-    }
     lane = injectLane;
-    blockedBy = await scanForeignFrames(tabId);
+    attachError = String(err && err.message ? err.message : err);
+    if (FOREIGN_EXTENSION_FRAME.test(attachError)) blockedBy = await scanForeignFrames(tabId);
   }
   if (!session.recording || session.stopping) {
     // A stop (or tab close) landed while we were attaching; that path has
@@ -287,8 +292,8 @@ async function startRecording(tabId) {
   session.capture = lane.name;
   session.lane = lane;
   startKeepAlive();
-  const warning = blockedBy ? reducedCaptureWarning(blockedBy) : null;
-  if (warning) pushEvent({ t: Date.now(), kind: KIND.LOG, level: "warning", title: warning, detail: { message: warning, blockedBy } });
+  const warning = lane === injectLane ? reducedCaptureWarning(blockedBy, attachError) : null;
+  if (warning) pushEvent({ t: Date.now(), kind: KIND.LOG, level: "warning", title: warning, detail: { message: warning, blockedBy, attachError } });
   await session.lane.start(tabId);
 
   await session.lane.deviceInfo(tabId);

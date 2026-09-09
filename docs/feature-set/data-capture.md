@@ -25,9 +25,13 @@ filterable timeline alongside the [session replay](session-replay.md).
 owned by another extension (password-manager inline menus, grammar checkers, shopping
 assistants) makes the whole tab unattachable — Chrome's rule that one extension may never
 inspect another ([#48](https://github.com/SaintPepsi/openjam/issues/48)). OpenJam then
-records anyway from the content scripts it already injects, marks the report
+records anyway from a page probe it puts into the tab, marks the report
 `meta.capture: "inject"`, and tells you which extension is in the way with a
 **Manage extension** button.
+
+Any other attach failure takes the same path: the recording runs in reduced mode and the
+warning quotes Chrome's reason verbatim (for example "Another debugger is already attached"
+when DevTools holds the tab), so you can fix the cause and record again in full.
 
 | Signal | Full (`cdp`) | Reduced (`inject`) |
 |---|---|---|
