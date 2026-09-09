@@ -13,8 +13,8 @@
 // Disconfirming inputs: remove the foreign iframe before starting → capture is
 // "cdp" and the warning assertions fail; comment out the probe arming in
 // src/lanes/inject.js start() → the console/network/error assertions fail;
-// move lane.quiesce() after the 400 ms wait in background.js stopRecording →
-// the console assertion fails (its batch arrives after recording=false).
+// drop the probe half of stopAll() in src/rrweb-relay.js → the console
+// assertion fails (the probe's last batch never flushes before recording=false).
 import { test, expect } from "@playwright/test";
 import path from "node:path";
 import { readFileSync } from "node:fs";
@@ -84,7 +84,7 @@ test("another extension's iframe: recording runs on the inject lane and names th
   // (the new document gets a fresh probe via the relay's hello), then console,
   // fetch(self) and an uncaught throw in the reloaded document. No settle wait:
   // stop must flush the probe's buffer itself.
-  // Disconfirming: drop the injectProbe call from the oj-rrweb-hello handler →
+  // Disconfirming: drop the injectProbe call from the inject lane's pageHello →
   // only one "counter is now 1" console event survives.
   await page.locator("#inc").click();
   await page.reload({ waitUntil: "load" });

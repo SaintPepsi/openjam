@@ -40,9 +40,8 @@ test("fetch: binary responses are not read; rejected fetches report failed and s
 
 test("disarmed: no response body is read; event-stream bodies are never read even when armed", async () => {
   // The probe sits in the page for the whole recording but must cost nothing
-  // when not armed: clone().text() is the one expensive step, so it's gated on
-  // isArmed(). Disconfirming: drop the isArmed() check before clone() → the
-  // clone below is observed.
+  // when not armed: the wrapper hands straight through to the page's fetch.
+  // Disconfirming: drop the early isArmed() return → emitted is non-empty.
   let cloned = 0;
   const mk = (type) => {
     const r = new Response("data: x\n\n", { headers: { "content-type": type } });
@@ -52,11 +51,10 @@ test("disarmed: no response body is read; event-stream bodies are never read eve
   };
   const armed = { v: false };
   const { g, emitted } = makeEnv(async () => mk("text/plain"), { isArmed: () => armed.v });
-  await g.fetch("x");
+  expect(await (await g.fetch("x")).text()).toBe("data: x\n\n"); // the page's fetch, untouched
   await flush();
   expect(cloned).toBe(0);
-  expect(emitted.at(-1)).toMatchObject({ kind: "net-end", status: 200 });
-  expect(emitted.at(-1).responseBody).toBeUndefined();
+  expect(emitted).toEqual([]); // disarmed: nothing inspected, nothing emitted
   armed.v = true;
   await g.fetch("x");
   await flush();

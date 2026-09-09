@@ -1,7 +1,7 @@
 // CDP capture lane: the chrome.debugger side of recording. Everything here was
 // background.js until the inject lane (src/lanes/inject.js) needed the same
 // seams — attach/start/stop/screenshot/deviceInfo — behind one interface so the
-// worker can pick a lane at start (session.capture) and stop caring which.
+// worker can pick a lane at start (session.lane) and stop caring which.
 import { KIND } from "../../event-kinds.js";
 import { BODY_CAPTURE_MAX_BYTES, classifyBody } from "../capture-limits.js";
 import { collectDeviceInfo } from "../device-info.js";
@@ -60,10 +60,6 @@ export function createCdpLane({ session, pushEvent, maybeErrorScreenshot }) {
     });
   }
 
-  function headersToObject(headers) {
-    return headers || {};
-  }
-
   // ---- capture helpers ------------------------------------------------------
 
   async function captureDeviceInfo() {
@@ -95,7 +91,8 @@ export function createCdpLane({ session, pushEvent, maybeErrorScreenshot }) {
   }
 
   async function fetchResponseBody(requestId, event, response) {
-    const lengthHeader = Number(headersToObject(response.headers)["content-length"] || headersToObject(response.headers)["Content-Length"] || 0);
+    const headers = response.headers || {};
+    const lengthHeader = Number(headers["content-length"] || headers["Content-Length"] || 0);
     if (!classifyBody(response.mimeType, lengthHeader)) return;
     try {
       const body = await sendCmd("Network.getResponseBody", { requestId });
@@ -130,7 +127,7 @@ export function createCdpLane({ session, pushEvent, maybeErrorScreenshot }) {
             method: req.method,
             url: req.url,
             resourceType: params.type,
-            requestHeaders: headersToObject(req.headers),
+            requestHeaders: req.headers || {},
             requestBody: req.postData || null,
             monoStart: params.timestamp,
             status: null,
@@ -152,7 +149,7 @@ export function createCdpLane({ session, pushEvent, maybeErrorScreenshot }) {
         event.detail.status = r.status;
         event.detail.statusText = r.statusText;
         event.detail.mimeType = r.mimeType;
-        event.detail.responseHeaders = headersToObject(r.headers);
+        event.detail.responseHeaders = r.headers || {};
         event.detail.remoteAddress = r.remoteIPAddress ? r.remoteIPAddress + ":" + r.remotePort : null;
         event.detail.fromCache = !!r.fromDiskCache;
         break;
@@ -234,7 +231,6 @@ export function createCdpLane({ session, pushEvent, maybeErrorScreenshot }) {
       await sendCmd("Log.enable", {});
       await sendCmd("Page.enable", {});
     },
-    async quiesce() {},
     async stop(tabId) {
       try {
         await chrome.debugger.detach({ tabId });
@@ -242,6 +238,10 @@ export function createCdpLane({ session, pushEvent, maybeErrorScreenshot }) {
         // already detached — fine.
       }
     },
+    // The debugger follows navigations by itself and sees every frame; nothing
+    // page-side to (re)arm, no page-side batches to accept.
+    pageHello: () => false,
+    handleBatch: () => false,
     screenshot: captureScreenshot,
     deviceInfo: captureDeviceInfo,
     onDebuggerEvent,

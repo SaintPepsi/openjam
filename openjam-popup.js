@@ -183,7 +183,7 @@
       this._error = "";
       this._warning = "";
       this._warningActions = [];
-      this._warnRendered = null; // what the .warn slot currently shows (text + actions)
+      this._renderedActions = null; // the actions array the buttons were last built from
       this._reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     }
 
@@ -200,6 +200,8 @@
       this._elStMeta = r.querySelector(".st-meta");
       this._elErr = r.querySelector(".err");
       this._elWarn = r.querySelector(".warn");
+      this._elWarnText = this._elWarn.appendChild(document.createElement("span"));
+      this._elWarnActions = this._elWarn.appendChild(document.createElement("div"));
 
       // interactions
       this._elToggle.addEventListener("click", () => this._onToggle());
@@ -308,13 +310,13 @@
       // notices: err carries HTML (issue link); warn is plain text. Hidden when empty.
       this._elErr.innerHTML = this._error || "";
       this._elErr.hidden = !this._error;
-      // Rebuild the warning's DOM only when its content changes: _render runs
-      // every second while recording, and replacing the action buttons under a
-      // pointer would swallow the click.
-      var warnKey = (this._warning || "") + "\u0000" + JSON.stringify(this._warningActions);
-      if (warnKey !== this._warnRendered) {
-        this._warnRendered = warnKey;
-        this._elWarn.textContent = this._warning || "";
+      this._elWarnText.textContent = this._warning || "";
+      // Buttons carry focus and click state, so rebuild them only when the
+      // actions array itself changes (showWarning/clearNotices), never on the
+      // per-second status tick.
+      if (this._warningActions !== this._renderedActions) {
+        this._renderedActions = this._warningActions;
+        this._elWarnActions.replaceChildren();
         for (var i = 0; i < this._warningActions.length; i++) {
           var a = this._warningActions[i];
           var b = document.createElement("button");
@@ -322,7 +324,7 @@
           b.type = "button";
           b.textContent = a.label;
           b.addEventListener("click", this._emit.bind(this, "oj-action", { id: a.id }));
-          this._elWarn.appendChild(b);
+          this._elWarnActions.appendChild(b);
         }
       }
       this._elWarn.hidden = !this._warning;

@@ -24,10 +24,10 @@ Reproduced with a fixture extension that injects its own iframe:
 
 - **One capture lane per session, chosen at start.** `cdp` when attach succeeds, `inject`
   when attach fails with the foreign-frame error. Lanes share one interface
-  (`{ name, start, quiesce, stop, screenshot, deviceInfo }`): `src/lanes/cdp.js`,
-  `src/lanes/inject.js`. The rest of the worker reads `session.lane`; no `if (attachFailed)`
-  scattered around.
-- **The authoritative signal is `session.capture`**, copied to `report.meta.capture`.
+  (`{ name, start, stop, screenshot, deviceInfo, pageHello, handleBatch }`): `src/lanes/cdp.js`,
+  `src/lanes/inject.js`, plus an `idleLane` null object in `background.js` between sessions.
+  The rest of the worker reads `session.lane`; no `if (attachFailed)` scattered around.
+- **The authoritative signal is `session.lane.name`**, copied to `report.meta.capture`.
   Viewer badge, AI-manifest `_doc`, and the popup warning all read that field.
 - **Same event schema on both lanes.** `src/lanes/inject.js` maps probe records onto the
   `event-kinds.js` LEGEND with `null` where the lane cannot know (`remoteAddress`).
@@ -42,9 +42,9 @@ Reproduced with a fixture extension that injects its own iframe:
   relay says hello (`background.js`, `oj-rrweb-hello`). Every other tab keeps native
   `fetch`/`console`. Registered content scripts were tried and rejected: they match by
   URL, not by tab.
-- **Flush before the grace window.** `stopRecording` calls `lane.quiesce()` (probe flush)
-  before the 400 ms wait that keeps `recording=true`, so the probe's last batch is still
-  accepted. On `pagehide` the probe hands its buffer to the relay over a synchronous DOM
+- **Flush before the grace window.** One `oj-rrweb-stop` message; the relay fans it out to
+  the recorder and the probe, before the 400 ms wait that keeps `recording=true`, so both
+  final batches are still accepted. On `pagehide` the probe hands its buffer to the relay over a synchronous DOM
   event (`oj-probe-flush`, string `detail`), because a `postMessage` task dies with the
   document.
 - **Disarmed means free.** While not recording, a console call costs one boolean check and
@@ -67,7 +67,7 @@ and screenshots of anything but the visible viewport.
 
 | Claim | Test | Disconfirming input |
 | --- | --- | --- |
-| Foreign frame → inject lane, culprit named, console/fetch/error/screenshots captured across a mid-recording reload, viewer badge pixel baseline | `e2e/foreign-extension-frame.spec.mjs` test 1 | remove the iframe (→ cdp); drop `injectProbe` from the hello handler; move `quiesce()` after the wait |
+| Foreign frame → inject lane, culprit named, console/fetch/error/screenshots captured across a mid-recording reload, viewer badge pixel baseline | `e2e/foreign-extension-frame.spec.mjs` test 1 | remove the iframe (→ cdp); drop `injectProbe` from `pageHello`; send the stop after the wait |
 | Popup gold notice + Manage button, pixel baseline, button survives the 1 s re-render and opens `chrome://extensions` | same spec, test 2 | rebuild the buttons unconditionally in `openjam-popup.js` `_render` |
 | Probe is not in bystander tabs | same spec, test 1 (`__ojProbeLoaded` check) | put `dist/page-probe.js` back in `manifest.json` |
 | Same page without the frame → cdp lane, no warning | same spec, test 3 | — (control) |

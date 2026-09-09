@@ -143,10 +143,16 @@ test("forwards probe batches verbatim as oj-page-batch and stops the probe on {s
   expect(toRecorder().slice(b2)).not.toContain("probe-start"); // disarmed: readiness no longer re-arms
 });
 
-test("oj-probe-stop disarms; oj-device-info answers with the shared collector's shape", () => {
+test("one oj-rrweb-stop disarms both the recorder and the probe; oj-device-info answers with the shared collector's shape", () => {
+  // The background sends a single stop; the probe must flush inside the same
+  // grace window as the recorder, so the relay fans the stop out to both.
+  // Disconfirming: drop the probe half of stopAll() → no "probe-stop" below.
+  fromBackground("oj-probe-start");
   const before = toRecorder().length;
-  expect(fromBackground("oj-probe-stop")).toEqual({ ok: true });
-  expect(toRecorder().slice(before)).toContain("probe-stop");
+  expect(fromBackground("oj-rrweb-stop")).toEqual({ ok: true });
+  expect(toRecorder().slice(before)).toEqual(["stop", "probe-stop"]);
+  fromRecorder("probe-ready");
+  expect(toRecorder().slice(before)).not.toContain("probe-start"); // disarmed: readiness no longer re-arms
   globalThis.navigator = { userAgent: "ua", platform: "p", language: "en", languages: ["en"], vendor: "", cookieEnabled: true, onLine: true };
   globalThis.location = { href: "https://page.test/" };
   globalThis.screen = { width: 1, height: 1, colorDepth: 24 };

@@ -44,12 +44,13 @@ function absolute(url) {
 
 const mimeOf = (contentType) => String(contentType || "").split(";")[0].trim();
 
-// isArmed gates the only expensive step — reading a cloned body — so a page
-// that is not being recorded pays one function call per fetch, nothing more.
+// While not armed, a fetch costs one boolean check: the page's own fetch is
+// called straight through, nothing is inspected.
 export function installNetworkProbe({ emit, isArmed = () => true, now = () => Date.now(), clock = () => performance.now() }, g = globalThis) {
   const origFetch = g.fetch;
   if (typeof origFetch === "function") {
     g.fetch = function (input, init) {
+      if (!isArmed()) return origFetch.apply(this, arguments);
       const requestId = "f" + ++seq;
       const t0 = clock();
       try {
@@ -72,18 +73,21 @@ export function installNetworkProbe({ emit, isArmed = () => true, now = () => Da
       const p = origFetch.apply(this, arguments);
       p.then(
         (res) => {
+          const responseHeaders = headersToObject(res.headers);
           const end = {
             kind: "net-end",
             requestId,
             t: now(),
             status: res.status,
             statusText: res.statusText,
-            mimeType: mimeOf(res.headers.get("content-type")),
-            responseHeaders: headersToObject(res.headers),
+            mimeType: mimeOf(responseHeaders["content-type"]),
+            responseHeaders,
             durationMs: Math.round(clock() - t0),
-            encodedBytes: Number(res.headers.get("content-length")) || null,
+            encodedBytes: Number(responseHeaders["content-length"]) || null,
             failed: false,
           };
+          // The one expensive step, and only while still armed (a stop can land
+          // mid-request).
           if (!isArmed() || !classifyBody(end.mimeType, end.encodedBytes)) return emit(end);
           res
             .clone()
@@ -136,7 +140,8 @@ export function installNetworkProbe({ emit, isArmed = () => true, now = () => Da
         });
         this.addEventListener("loadend", () => {
           const failed = this.status === 0;
-          const mimeType = mimeOf(this.getResponseHeader && this.getResponseHeader("content-type"));
+          const responseHeaders = parseRawHeaders(this.getAllResponseHeaders && this.getAllResponseHeaders());
+          const mimeType = mimeOf(responseHeaders["content-type"]);
           const end = {
             kind: "net-end",
             requestId,
@@ -144,7 +149,7 @@ export function installNetworkProbe({ emit, isArmed = () => true, now = () => Da
             status: failed ? null : this.status,
             statusText: this.statusText || null,
             mimeType,
-            responseHeaders: parseRawHeaders(this.getAllResponseHeaders && this.getAllResponseHeaders()),
+            responseHeaders,
             durationMs: Math.round(clock() - t0),
             encodedBytes: null,
             failed,

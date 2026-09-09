@@ -10,17 +10,14 @@
 // dist/rrweb-recorder.js, injected at document_start so the patch is installed
 // before the page's framework runs.
 import { record } from "rrweb";
+import { TO_RELAY, FROM_RELAY, FLUSH_INTERVAL_MS, RECORDER_FLUSH_EVENT } from "./wire.js";
 
-const FLUSH_INTERVAL_MS = 500;
 // Hard cap on awaiting blob->data rewrites per flush. Must stay under the background's
 // 400ms stop-grace window (background.js stop/salvage paths' setTimeout(resolve, 400)
 // before session.recording = false) or the recorder's final awaited flush posts after
 // recording is already false and the whole last batch gets silently dropped. 300ms is
 // still generous for an in-memory blob fetch + FileReader (typically single-digit ms).
 const REWRITE_TIMEOUT_MS = 300;
-const TO_RELAY = "oj-rec-to-relay"; // envelope tag for messages we send
-const FLUSH_EVENT = "oj-recorder-flush"; // DOM event: synchronous cross-world hop for pagehide
-const FROM_RELAY = "oj-relay-to-rec"; // envelope tag for messages we receive
 
 // Emit-side blob: -> data: rewriter (WHY):
 // inlineImages (below) only runs in rrweb's node serializer — full snapshot and
@@ -144,25 +141,23 @@ function main() {
     post("batch", { eventsJson: JSON.stringify(events) });
   }
 
-  // Synchronous drain, shared by pagehide and stop: neither can await the
-  // in-flight rewrites (pagehide because the page is unloading; stop because
-  // posting must land inside the background's 400ms stop-grace) — post
-  // whatever we have immediately (best-effort, as before). Any rewrite still
-  // in flight just keeps its original blob: src for that one image; the
-  // events themselves are never at risk of being dropped.
+  // stop: posting must land inside the background's 400ms stop-grace.
   function flushSync() {
     const eventsJson = drainSync();
     if (eventsJson) post("batch", { eventsJson });
   }
 
-  // pagehide: a postMessage is a queued task and dies with the unloading
-  // document, so the last ~500 ms of replay before a navigation were lost. A DOM
-  // event reaches the relay's listener synchronously, in every world.
+  // pagehide: the synchronous DOM-event hop (see src/wire.js).
   function flushOnPagehide() {
     const eventsJson = drainSync();
-    if (eventsJson) document.dispatchEvent(new CustomEvent(FLUSH_EVENT, { detail: eventsJson }));
+    if (eventsJson) document.dispatchEvent(new CustomEvent(RECORDER_FLUSH_EVENT, { detail: eventsJson }));
   }
 
+  // Synchronous drain, shared by pagehide and stop: neither can await the
+  // in-flight rewrites (pagehide because the page is unloading; stop because of
+  // the grace window) — take whatever we have immediately. Any rewrite still in
+  // flight just keeps its original blob: src for that one image; the events
+  // themselves are never at risk of being dropped.
   function drainSync() {
     if (!buffer.length) return null;
     const events = buffer;

@@ -252,7 +252,7 @@ test("a foreign extension's iframe switches the session to the inject lane inste
   expect(captureVisibleTabCalls).toBe(1);
   // The probe is not a manifest content script: this lane puts it into THIS tab
   // now, and again into each document the tab navigates to (hello).
-  // Disconfirming: drop the injectProbe call in inject.start or in the hello handler.
+  // Disconfirming: drop the injectProbe call in inject.start or in pageHello.
   const probeInjections = () => executedScripts.filter((e) => e.files?.[0] === "dist/page-probe.js");
   expect(probeInjections()).toEqual([{ tabId: 7, files: ["dist/page-probe.js"], world: "MAIN" }]);
   // a reloaded page asks hello → resume the recorder, and put a fresh probe in
@@ -276,11 +276,8 @@ test("a foreign extension's iframe switches the session to the inject lane inste
 
   tabMessages.length = 0;
   await dispatch({ action: "stop" });
-  // The probe must flush BEFORE the recorder's grace window, while batches are
-  // still accepted: oj-probe-stop precedes oj-rrweb-stop's 400 ms wait. Disconfirming:
-  // move quiesce() after the wait in stopRecording → order flips or batches are refused.
-  const actions = tabMessages.map((m) => m.msg.action);
-  expect(actions.indexOf("oj-probe-stop")).toBeGreaterThan(actions.indexOf("oj-rrweb-stop"));
+  // One stop message; the relay fans it out to recorder and probe (test/relay.test.js).
+  expect(tabMessages.map((m) => m.msg.action)).toEqual(["oj-rrweb-stop"]);
   const report = store[storedReports()[0]];
   expect(report.meta.capture).toBe("inject");
   expect(report.device.userAgent).toBe("probe-ua");
@@ -332,16 +329,16 @@ test("any other attach failure records on the inject lane and quotes Chrome's re
 });
 
 test("a session records on the cdp lane and the report says so (meta.capture)", async () => {
-  // session.capture is THE signal for which lane a recording runs on; every
+  // session.lane.name is THE signal for which lane a recording runs on; every
   // consumer (viewer badge, manifest doc, degraded warning) reads it from meta.
-  // Disconfirming: drop the `capture: session.capture` copy in finalizeRecording.
+  // Disconfirming: drop the `capture: session.lane.name` copy in finalizeRecording.
   expect((await dispatch({ action: "start", tabId: 1 })).ok).toBe(true);
   expect((await dispatch({ action: "getStatus" })).capture).toBe("cdp");
   await dispatch({ action: "stop" });
   const report = store[storedReports()[0]];
   expect(report.meta.capture).toBe("cdp");
   expect(report.device.userAgent).toBe("test");
-  expect((await dispatch({ action: "getStatus" })).capture).toBe("cdp"); // last lane, until the next start
+  expect((await dispatch({ action: "getStatus" })).capture).toBeNull(); // idle again: no lane
 });
 
 test("refuses non-recordable tabs with actionable advice, not a raw CDP error", async () => {

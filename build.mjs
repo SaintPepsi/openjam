@@ -72,36 +72,20 @@ landing = splice(landing, "/* shift-audio:start */", "/* shift-audio:end */",
 writeFileSync("docs/index.html", landing);
 console.log("spliced palette into 4 consumers + component + install-cta + oj-waveform + inlined shift-audio into docs/index.html");
 
-await build({
-  entryPoints: ["src/rrweb-recorder.js"],
-  bundle: true,
-  format: "iife",
-  minify: true,
-  outfile: "dist/rrweb-recorder.js",
-  logLevel: "info",
-});
-
-// MAIN-world page probe: console/error/fetch/XHR capture for the inject lane
-// (recording without chrome.debugger, issue #48).
-await build({
-  entryPoints: ["src/page-probe.js"],
-  bundle: true,
-  format: "iife",
-  minify: true,
-  outfile: "dist/page-probe.js",
-  logLevel: "info",
-});
-
-// Isolated-world bridge that forwards the MAIN-world recorder's batches to the
-// background worker (the recorder has no chrome.* APIs in the main world).
-await build({
-  entryPoints: ["src/rrweb-relay.js"],
-  bundle: true,
-  format: "iife",
-  minify: true,
-  outfile: "dist/rrweb-relay.js",
-  logLevel: "info",
-});
+// Content scripts, one bundle each: the MAIN-world rrweb recorder, the
+// MAIN-world page probe (console/error/fetch/XHR for the inject lane, #48), and
+// the isolated-world relay that carries both to the background worker (MAIN
+// world has no chrome.* APIs).
+for (const name of ["rrweb-recorder", "page-probe", "rrweb-relay"]) {
+  await build({
+    entryPoints: ["src/" + name + ".js"],
+    bundle: true,
+    format: "iife",
+    minify: true,
+    outfile: "dist/" + name + ".js",
+    logLevel: "info",
+  });
+}
 
 await build({
   stdin: {

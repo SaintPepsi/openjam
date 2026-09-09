@@ -74,54 +74,39 @@ export function mergeNetworkEnd(event, end) {
 
 // The probe lives only in the recorded tab, only while this lane records: it
 // is injected into the current document at start, and again into each document
-// the tab navigates to (the relay's hello → injectProbe). It is never a manifest
-// or registered content script — those match by URL, not by tab, and would put
-// patched fetch/console into every page the user has open.
-const PROBE_FILES = ["dist/page-probe.js"];
+// the tab navigates to (pageHello). It is never a manifest or registered
+// content script — those match by URL, not by tab, and would put patched
+// fetch/console into every page the user has open. injectImmediately: as early
+// as the API allows in a still-loading document.
+function injectProbe(tabId) {
+  return chrome.scripting.executeScript({ target: { tabId }, files: ["dist/page-probe.js"], world: "MAIN", injectImmediately: true });
+}
 
-export function createInjectLane({ session, pushEvent, maybeErrorScreenshot, ensureContentScripts }) {
-  let windowId = null;
-
-  async function tell(tabId, action) {
-    try {
-      return await chrome.tabs.sendMessage(tabId, { action });
-    } catch {
-      await ensureContentScripts(tabId);
-      return chrome.tabs.sendMessage(tabId, { action });
-    }
-  }
-
-  // injectImmediately: as early as the API allows in a document that is still
-  // loading, so a navigation mid-recording misses as little as possible.
-  function injectProbe(tabId) {
-    return chrome.scripting.executeScript({ target: { tabId }, files: PROBE_FILES, world: "MAIN", injectImmediately: true });
-  }
-
+// tell(tabId, action): background.js's sendMessage-or-inject-then-retry.
+export function createInjectLane({ session, pushEvent, maybeErrorScreenshot, tell }) {
   return {
     name: "inject",
-    injectProbe,
     async start(tabId) {
       try {
-        ({ windowId } = await chrome.tabs.get(tabId));
-        await injectProbe(tabId);
-        await tell(tabId, "oj-probe-start");
+        // Order-independent: the relay arms the probe on whichever of the two
+        // lands second (probe-ready vs oj-probe-start).
+        await Promise.all([injectProbe(tabId), tell(tabId, "oj-probe-start")]);
       } catch (err) {
         pushEvent({ t: Date.now(), kind: KIND.LOG, level: "warning", title: "Console and network capture unavailable on this page", detail: { message: String(err) } });
       }
     },
-    // Before the stop grace window: make the probe flush its buffer while the
-    // background still accepts batches.
-    async quiesce(tabId) {
-      try {
-        await chrome.tabs.sendMessage(tabId, { action: "oj-probe-stop" });
-      } catch {
-        // probe absent or tab gone — nothing to flush
-      }
-    },
     async stop() {},
+    // A document the tab navigated to has no probe yet: put one in. The relay
+    // arms it when it announces probe-ready.
+    pageHello(tabId) {
+      injectProbe(tabId).catch(() => {});
+      return true;
+    },
     async screenshot(label) {
       try {
-        // captureVisibleTab rejects on its own when the tab isn't the visible one.
+        // The recorded tab's own window; captureVisibleTab rejects on its own
+        // when that tab isn't the visible one.
+        const { windowId } = await chrome.tabs.get(session.tabId);
         const image = await chrome.tabs.captureVisibleTab(windowId, { format: "png" });
         pushEvent({ t: Date.now(), kind: KIND.SCREENSHOT, title: label, detail: { image } });
       } catch (err) {
@@ -150,6 +135,7 @@ export function createInjectLane({ session, pushEvent, maybeErrorScreenshot, ens
         if (rec.kind === "net-start") session.requestEvents.set(rec.requestId, full);
         if (rec.kind === "error" || (rec.kind === "console" && rec.level === "error")) maybeErrorScreenshot();
       }
+      return true;
     },
   };
 }

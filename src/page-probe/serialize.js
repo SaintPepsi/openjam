@@ -43,7 +43,8 @@ function serializeOne(value, depth, seen) {
 // Strings stay raw; everything else JSON-ish, depth-capped, cycle-safe,
 // clipped per argument. Joined with spaces like console output.
 export function serializeArgs(args) {
-  return Array.from(args, (a) => clip(serializeOne(a, 0, new Set()))).join(" ");
+  const seen = new Set(); // one per call: serializeOne removes each value on the way out
+  return Array.from(args, (a) => clip(serializeOne(a, 0, seen))).join(" ");
 }
 
 // Stack frames as "name — url:line:col" strings, matching the CDP lane's
