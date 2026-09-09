@@ -148,7 +148,8 @@ https.request("https://oauth2.googleapis.com/token",{method:"POST",headers:{"Con
 > in review — only tag while nothing is pending.)
 
 1. Bump, commit and tag in one step from `main` (the `version` script in
-   `package.json` copies the new number into `manifest.json`):
+   `package.json` copies the new number into `manifest.json` and the landing
+   page, `docs/index.html`, so GitHub Pages shows the release once pushed):
    ```sh
    git checkout main && git pull
    npm run bump -- patch   # or minor / major
